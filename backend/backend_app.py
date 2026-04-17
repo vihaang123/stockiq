@@ -34,7 +34,7 @@ DB_PATH = os.getenv("DB_PATH", "stockiq.db")
 FRONTEND_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://stockiq-4yhomrnsf-vihaang123s-projects.vercel.app",
+    "https://stockiq-gy2ut0j2m-vihaang123s-projects.vercel.app",
 ]
 
 # ─── App ──────────────────────────────────────────────────────────────────────
@@ -52,8 +52,8 @@ app = FastAPI(
 # ── CORS — must be added BEFORE any other middleware or routes ─────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=FRONTEND_ORIGINS,
-    allow_credentials=False,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # 🔥 KEY FIX
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
