@@ -26,6 +26,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, field_validator
+from fastapi.middleware.cors import CORSMiddleware
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 # Set SECRET_KEY as an environment variable on Render dashboard.
@@ -45,6 +46,18 @@ app = FastAPI(
         "`Authorization: Bearer <token>` on all protected endpoints."
     ),
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://stockiq-4yhomrnsf-vihaang123s-projects.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # CORS — allow Vercel frontend and everything else
