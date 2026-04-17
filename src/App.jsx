@@ -1,3 +1,5 @@
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+
 /* ════════════════════════════════════════════════════════════════
    STOCKIQ — Smart Investment & Portfolio Intelligence System
    Complete Edition with Database Management
