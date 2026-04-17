@@ -1,5 +1,3 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-
 /* ════════════════════════════════════════════════════════════════
    STOCKIQ — Smart Investment & Portfolio Intelligence System
    Complete Edition with Database Management
@@ -197,87 +195,57 @@ function searchStocks(q) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   DATABASE LAYER — localStorage with full CRUD + export
+   API / STORAGE LAYER
+   ─ When FastAPI backend is running at localhost:8000: uses API
+   ─ When running as Claude artifact (no backend): uses localStorage
    ════════════════════════════════════════════════════════════════ */
-const DB = {
-  get:(k,d=[])=>{ try{const v=localStorage.getItem(`${APP}:${k}`); return v!=null?JSON.parse(v):d;}catch{return d;} },
-  set:(k,v)=>{ try{localStorage.setItem(`${APP}:${k}`,JSON.stringify(v));}catch{} },
-  del:(k)=>localStorage.removeItem(`${APP}:${k}`),
-  keys:()=>Object.keys(localStorage).filter(k=>k.startsWith(`${APP}:`)).map(k=>k.replace(`${APP}:`,""))
-};
+const API_BASE = "https://stockiq-3f7q.onrender.com";
 
-// ── Users ──────────────────────────────────────────────────────────────────────
-const usersDB = {
-  all:()=>DB.get("users",{}),
-  get:(u)=>usersDB.all()[u]||null,
-  save:(u,data)=>{ const d=usersDB.all(); d[u]=data; DB.set("users",d); },
-  del:(u)=>{ const d=usersDB.all(); delete d[u]; DB.set("users",d); },
-  count:()=>Object.keys(usersDB.all()).length,
-};
-function hashPwd(p){ let h=0; for(const c of p){h=(h<<5)-h+c.charCodeAt(0); h|=0;} return h.toString(36); }
+// Token persisted in localStorage — survives page refresh
+const TOKEN_KEY = "stockiq_jwt";
+function getToken(){ return localStorage.getItem(TOKEN_KEY); }
+function setToken(t){ if(t) localStorage.setItem(TOKEN_KEY,t); else localStorage.removeItem(TOKEN_KEY); }
+function clearToken(){ localStorage.removeItem(TOKEN_KEY); }
 
-// ── Transactions ───────────────────────────────────────────────────────────────
-const txnDB = {
-  all:(uid)=>DB.get(`txns:${uid}`,[]),
-  add:(uid,t)=>{ const d=txnDB.all(uid); d.unshift({...t,id:uid_gen()}); DB.set(`txns:${uid}`,d); },
-  del:(uid,id)=>{ const d=txnDB.all(uid).filter(t=>t.id!==id); DB.set(`txns:${uid}`,d); },
-  count:(uid)=>txnDB.all(uid).length,
-};
-const uid_gen=uid;
-
-// ── Portfolio ──────────────────────────────────────────────────────────────────
-const portDB = {
-  get:(uid)=>DB.get(`portfolio:${uid}`,{}),
-  save:(uid,p)=>DB.set(`portfolio:${uid}`,p),
-  count:(uid)=>Object.keys(portDB.get(uid)).length,
-};
-
-// ── History ────────────────────────────────────────────────────────────────────
-const histDB = {
-  get:(uid)=>DB.get(`history:${uid}`,[]),
-  push:(uid,entry)=>{
-    const h=histDB.get(uid);
-    const idx=h.findIndex(x=>x.date===entry.date);
-    if(idx>=0) h[idx]=entry; else h.push(entry);
-    DB.set(`history:${uid}`,h.slice(-120));
-  },
-  count:(uid)=>histDB.get(uid).length,
-};
-
-// ── Watchlist ──────────────────────────────────────────────────────────────────
-const watchDB = {
-  get:(uid)=>DB.get(`watchlist:${uid}`,[]),
-  add:(uid,sym)=>{ const d=watchDB.get(uid); if(!d.includes(sym)){d.push(sym);DB.set(`watchlist:${uid}`,d);} },
-  remove:(uid,sym)=>{ const d=watchDB.get(uid).filter(s=>s!==sym); DB.set(`watchlist:${uid}`,d); },
-  count:(uid)=>watchDB.get(uid).length,
-};
-
-// ── Simulations ────────────────────────────────────────────────────────────────
-const simDB = {
-  all:(uid)=>DB.get(`simulations:${uid}`,[]),
-  save:(uid,s)=>{ const d=simDB.all(uid); d.unshift({...s,id:uid_gen(),date:nowS()}); DB.set(`simulations:${uid}`,d.slice(0,50)); },
-  count:(uid)=>simDB.all(uid).length,
-};
-
-// ── Risk snapshots ─────────────────────────────────────────────────────────────
-const riskDB = {
-  all:(uid)=>DB.get(`risk:${uid}`,[]),
-  save:(uid,r)=>{ const d=riskDB.all(uid); d.unshift({...r,date:nowS()}); DB.set(`risk:${uid}`,d.slice(0,30)); },
-  count:(uid)=>riskDB.all(uid).length,
-};
-
-// ── DB stats ───────────────────────────────────────────────────────────────────
-function getDBStats(uid){
-  return {
-    users:    { count:usersDB.count(), label:"Users", icon:"👤" },
-    portfolio:{ count:portDB.count(uid), label:"Holdings", icon:"📊" },
-    txns:     { count:txnDB.count(uid), label:"Transactions", icon:"💸" },
-    history:  { count:histDB.count(uid), label:"History Entries", icon:"📈" },
-    watchlist:{ count:watchDB.count(uid), label:"Watchlist", icon:"⭐" },
-    simulations:{count:simDB.count(uid), label:"Simulations", icon:"🔮"},
-    risk:     { count:riskDB.count(uid), label:"Risk Snapshots", icon:"⚠️" },
-  };
+// ── apiFetch: reads token from localStorage on every call ────────────────────
+async function apiFetch(path, opts={}) {
+  const headers = { "Content-Type":"application/json" };
+  const tok = getToken();
+  if(tok) headers["Authorization"] = "Bearer " + tok;
+  const res = await fetch(API_BASE + path, { ...opts, headers:{ ...headers, ...(opts.headers||{}) } });
+  if(!res.ok){
+    let msg = "Request failed";
+    try{
+      const e = await res.json();
+      msg = e.detail || (typeof e === "string" ? e : JSON.stringify(e));
+    }catch{}
+    // 401 = token expired / invalid — clear it so auto-login retries
+    if(res.status === 401) clearToken();
+    throw new Error(msg);
+  }
+  if(res.status === 204) return null;
+  return res.json();
 }
+
+async function apiLogin(username, password) {
+  const body = new URLSearchParams({ username, password });
+  const res = await fetch(API_BASE + "/auth/login", {
+    method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body
+  });
+  if(!res.ok){
+    let msg="Invalid username or password";
+    try{ const e=await res.json(); msg=e.detail||msg; }catch{}
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+
+
+
+
 
 // ─── Risk Engine ──────────────────────────────────────────────────────────────
 function calcRisk(portfolio, priceMap){
@@ -521,43 +489,38 @@ function AuthPage({onAuth}){
 
   const submit=async()=>{
     setErr(""); setLoading(true);
-    await new Promise(r=>setTimeout(r,500));
     const {username,password,email}=form;
     if(!username.trim()||!password){setErr("All fields required");setLoading(false);return;}
     if(password.length<4){setErr("Password must be 4+ characters");setLoading(false);return;}
 
-    if(mode==="register"){
-      if(usersDB.get(username)){setErr("Username already taken");setLoading(false);return;}
-      usersDB.save(username,{username,email,passwordHash:hashPwd(password),createdAt:nowS()});
-      toast("Account created! Sign in now.","success");
-      setMode("login"); setLoading(false); return;
+    try{
+      if(mode==="register"){
+        const regBody = email ? {username,password,email} : {username,password};
+        await apiFetch("/auth/register",{method:"POST",body:JSON.stringify(regBody)});
+        toast("Account created! Sign in now.","success");
+        setMode("login"); setLoading(false); return;
+      }
+      const data=await apiLogin(username,password);
+      setToken(data.access_token);
+      toast("Welcome back!","success");
+      setTimeout(()=>onAuth({username:data.username}),300);
+    }catch(e){
+      setErr(e.message||"Something went wrong");
     }
-    const u=usersDB.get(username);
-    if(!u||u.passwordHash!==hashPwd(password)){setErr("Invalid username or password");setLoading(false);return;}
-    toast("Welcome back!","success");
-    setTimeout(()=>onAuth(u),400);
     setLoading(false);
   };
 
   const demo=async()=>{
-    const u="demo_user";
-    if(!usersDB.get(u)){
-      usersDB.save(u,{username:u,email:"demo@stockiq.in",passwordHash:hashPwd("demo123"),createdAt:nowS()});
-      // Seed demo portfolio
-      const p={"TCS.NS":{qty:10,avgPrice:3820},"HDFCBANK.NS":{qty:20,avgPrice:1610},"SUNPHARMA.NS":{qty:15,avgPrice:1620},"RELIANCE.NS":{qty:8,avgPrice:2780},"ITC.NS":{qty:50,avgPrice:440},"HCLTECH.NS":{qty:12,avgPrice:1580},"COALINDIA.NS":{qty:30,avgPrice:420}};
-      portDB.save(u,p);
-      [["TCS.NS",10,3820,"buy"],["HDFCBANK.NS",20,1610,"buy"],["SUNPHARMA.NS",15,1620,"buy"],["RELIANCE.NS",8,2780,"buy"],["ITC.NS",50,440,"buy"],["HCLTECH.NS",12,1580,"buy"],["COALINDIA.NS",30,420,"buy"]].forEach(([sym,qty,price,type])=>{
-        txnDB.add(u,{symbol:sym,qty,price,type,date:nowS()});
-      });
-      // Seed history — 120 days
-      const base=Object.entries(p).reduce((s,[,h])=>s+h.qty*h.avgPrice,0);
-      for(let i=119;i>=0;i--){
-        const d=new Date(); d.setDate(d.getDate()-i);
-        histDB.push(u,{date:d.toISOString().split("T")[0],value:base*(0.88+Math.random()*0.24)});
-      }
-      watchDB.add(u,"MARUTI.NS"); watchDB.add(u,"INFY.NS"); watchDB.add(u,"BAJFINANCE.NS"); watchDB.add(u,"DRREDDYS.NS"); watchDB.add(u,"LT.NS");
-    }
-    onAuth(usersDB.get(u));
+    setLoading(true); setErr("");
+    try{
+      // Register demo user (silent fail if exists)
+      try{ await apiFetch("/auth/register",{method:"POST",body:JSON.stringify({username:"demo_user",password:"demo123",email:"demo@stockiq.in"})}); }catch{}
+      const data=await apiLogin("demo_user","demo123");
+      setToken(data.access_token);
+      toast("Welcome, Demo User!","success");
+      setTimeout(()=>onAuth({username:data.username}),300);
+    }catch(e){ setErr("Demo login failed: "+e.message); }
+    setLoading(false);
   };
 
   return (
@@ -621,7 +584,7 @@ function AuthPage({onAuth}){
             </button>
           </div>
         </Card>
-        <p style={{textAlign:"center",color:"var(--t3)",fontSize:11,marginTop:16}}>Data stored locally in your browser · No server required</p>
+        <p style={{textAlign:"center",color:"var(--t3)",fontSize:11,marginTop:16}}>Powered by StockIQ API · stockiq-3f7q.onrender.com</p>
       </div>
       <Toast toasts={toasts} remove={remove}/>
     </div>
@@ -648,13 +611,36 @@ export default function App(){
     setPrices(p);
   },[portfolio,watchlist]);
 
+  // ── Auto-login on refresh: restore session from localStorage token ──────────
   useEffect(()=>{
+    const tok = getToken();
+    if(!tok || user) return;
+    apiFetch("/auth/me")
+      .then(data=>{ setUser({username:data.username}); })
+      .catch(()=>{ clearToken(); });
+  },[]);
+
+  // ── Load all data from FastAPI on login ────────────────────────────────────
+  const loadAllData = useCallback(async()=>{
     if(!user) return;
-    const p=portDB.get(user.username); setPortfolio(p);
-    const h=histDB.get(user.username); setHistory(h);
-    const w=watchDB.get(user.username); setWatchlist(w);
+    try{
+      const [portData,histData,watchData] = await Promise.all([
+        apiFetch("/portfolio"),
+        apiFetch("/history"),
+        apiFetch("/watchlist"),
+      ]);
+      // Convert portfolio array -> {symbol: {qty, avgPrice}} map
+      const portMap={};
+      ((portData&&portData.holdings)||[]).forEach(h=>{ portMap[h.symbol]={qty:h.qty,avgPrice:h.avg_price}; });
+      setPortfolio(portMap);
+      // History: [{date,value}]
+      setHistory((histData||[]).map(h=>({date:h.date,value:h.value})));
+      // Watchlist: array of symbols
+      setWatchlist((watchData||[]).map(w=>w.symbol||w));
+    }catch(e){ toast("Failed to load data: "+e.message,"error"); }
   },[user]);
 
+  useEffect(()=>{ loadAllData(); },[loadAllData]);
   useEffect(()=>{ if(user) refreshPrices(); },[refreshPrices,user]);
 
   useEffect(()=>{
@@ -663,56 +649,67 @@ export default function App(){
     return ()=>clearInterval(iv);
   },[user,refreshPrices]);
 
-  // Record daily history snapshot
+  // Push daily NAV snapshot to backend once per day
+  const lastHistPush = useRef("");
   useEffect(()=>{
     if(!user||!Object.keys(portfolio).length) return;
+    const today=todayS();
+    if(lastHistPush.current===today) return;
+    lastHistPush.current=today;
     const total=Object.entries(portfolio).reduce((s,[sym,h])=>s+h.qty*(prices[sym]||h.avgPrice),0);
-    histDB.push(user.username,{date:todayS(),value:total});
-    setHistory(histDB.get(user.username));
+    apiFetch("/history",{method:"POST",body:JSON.stringify({date:today,value:+total.toFixed(2)})})
+      .then(()=>apiFetch("/history").then(d=>setHistory((d||[]).map(h=>({date:h.date,value:h.value})))))
+      .catch(()=>{});
   },[prices]);
 
-  const buyStock=(symbol,qty,price)=>{
-    const h={...portfolio};
-    if(h[symbol]){
-      const tq=h[symbol].qty+qty;
-      h[symbol]={qty:tq,avgPrice:((h[symbol].avgPrice*h[symbol].qty)+(price*qty))/tq};
-    } else {
-      h[symbol]={qty,avgPrice:price};
-    }
-    setPortfolio(h);
-    portDB.save(user.username,h);
-    txnDB.add(user.username,{symbol,qty,price,type:"buy",date:nowS()});
-    toast(`Bought ${qty} × ${symbol} @ ${fmtC(price)}`,"success");
+  const buyStock=async(symbol,qty,price)=>{
+    try{
+      const result=await apiFetch("/portfolio/buy",{method:"POST",body:JSON.stringify({symbol,qty,price})});
+      // Reload full portfolio from backend to stay in sync
+      const portData=await apiFetch("/portfolio");
+      const portMap={};
+      (portData?.holdings||[]).forEach(h=>{ portMap[h.symbol]={qty:h.qty,avgPrice:h.avg_price}; });
+      setPortfolio(portMap);
+      toast(`Bought ${qty} × ${symbol} @ ${fmtC(price)}`,"success");
+    }catch(e){ toast("Buy failed: "+e.message,"error"); }
   };
 
-  const sellStock=(symbol,qty,price)=>{
-    const h={...portfolio};
-    if(!h[symbol]||h[symbol].qty<qty){toast("Insufficient holdings","error");return;}
-    h[symbol]={...h[symbol],qty:h[symbol].qty-qty};
-    if(h[symbol].qty===0) delete h[symbol];
-    setPortfolio(h);
-    portDB.save(user.username,h);
-    txnDB.add(user.username,{symbol,qty,price,type:"sell",date:nowS()});
-    toast(`Sold ${qty} × ${symbol} @ ${fmtC(price)}`,"success");
+  const sellStock=async(symbol,qty,price)=>{
+    try{
+      await apiFetch("/portfolio/sell",{method:"POST",body:JSON.stringify({symbol,qty,price})});
+      const portData=await apiFetch("/portfolio");
+      const portMap={};
+      (portData?.holdings||[]).forEach(h=>{ portMap[h.symbol]={qty:h.qty,avgPrice:h.avg_price}; });
+      setPortfolio(portMap);
+      toast(`Sold ${qty} × ${symbol} @ ${fmtC(price)}`,"success");
+    }catch(e){ toast("Sell failed: "+e.message,"error"); }
   };
 
-  const toggleWatch=(sym)=>{
-    const w=watchDB.get(user.username);
-    if(w.includes(sym)){watchDB.remove(user.username,sym);toast(`Removed ${sym} from watchlist`,"info");}
-    else{watchDB.add(user.username,sym);toast(`Added ${sym} to watchlist`,"success");}
-    setWatchlist(watchDB.get(user.username));
+  const toggleWatch=async(sym)=>{
+    try{
+      if(watchlist.includes(sym)){
+        await apiFetch("/watchlist/"+encodeURIComponent(sym),{method:"DELETE"});
+        setWatchlist(w=>w.filter(s=>s!==sym));
+        toast(`Removed ${sym} from watchlist`,"info");
+      }else{
+        await apiFetch("/watchlist",{method:"POST",body:JSON.stringify({symbol:sym})});
+        setWatchlist(w=>[...w,sym]);
+        toast(`Added ${sym} to watchlist`,"success");
+      }
+    }catch(e){ toast("Watchlist error: "+e.message,"error"); }
   };
 
   if(!user) return (
-    <div data-theme={theme}>
+    <div data-theme={theme} style={{background:theme==="dark"?"#0d1117":"#f0f4f8",minHeight:"100vh"}}>
       <GlobalStyles theme={theme}/>
       <AuthPage onAuth={setUser}/>
     </div>
   );
 
-  const risk=calcRisk(portfolio,prices);
-  const totalVal=Object.entries(portfolio).reduce((s,[sym,h])=>s+h.qty*(prices[sym]||h.avgPrice),0);
-  const totalCost=Object.entries(portfolio).reduce((s,[,h])=>s+h.qty*h.avgPrice,0);
+  const safePortfolio = portfolio||{};
+  const risk=calcRisk(safePortfolio,prices);
+  const totalVal=Object.entries(safePortfolio).reduce((s,[sym,h])=>s+(h&&h.qty?h.qty*(prices[sym]||h.avgPrice):0),0);
+  const totalCost=Object.entries(safePortfolio).reduce((s,[,h])=>s+(h&&h.qty?h.qty*h.avgPrice:0),0);
   const totalPnL=totalVal-totalCost;
   const totalPnLPct=totalCost?(totalPnL/totalCost)*100:0;
 
@@ -730,16 +727,16 @@ export default function App(){
   ];
 
   const PAGES={
-    dashboard:<DashboardPage portfolio={portfolio} prices={prices} risk={risk} totalVal={totalVal} totalPnL={totalPnL} totalPnLPct={totalPnLPct} history={history} user={user}/>,
+    dashboard:<DashboardPage portfolio={safePortfolio} prices={prices} risk={risk} totalVal={totalVal} totalPnL={totalPnL} totalPnLPct={totalPnLPct} history={history||[]} user={user}/>,
     markets:<MarketsPage portfolio={portfolio} prices={prices} watchlist={watchlist} onWatch={toggleWatch} onTrade={(sym)=>{setPage("trade");}}/>,
-    portfolio:<PortfolioPage portfolio={portfolio} prices={prices} toast={toast} onWatch={toggleWatch} watchlist={watchlist}/>,
-    trade:<TradePage portfolio={portfolio} prices={prices} onBuy={buyStock} onSell={sellStock} watchlist={watchlist} onWatch={toggleWatch}/>,
-    risk:<RiskAnalysisPage portfolio={portfolio} prices={prices} risk={risk} user={user} totalVal={totalVal} history={history}/>,
-    simulate:<SimulatePage portfolio={portfolio} prices={prices} risk={risk} toast={toast} user={user}/>,
+    portfolio:<PortfolioPage portfolio={safePortfolio} prices={prices} toast={toast} onWatch={toggleWatch} watchlist={watchlist||[]}/>,
+    trade:<TradePage portfolio={safePortfolio} prices={prices} onBuy={buyStock} onSell={sellStock} watchlist={watchlist||[]} onWatch={toggleWatch}/>,
+    risk:<RiskAnalysisPage portfolio={safePortfolio} prices={prices} risk={risk} user={user} totalVal={totalVal} history={history||[]}/>,
+    simulate:<SimulatePage portfolio={safePortfolio} prices={prices} risk={risk} toast={toast} user={user}/>,
     transactions:<TransactionsPage user={user} portfolio={portfolio} prices={prices} toast={toast}/>,
     watchlist:<WatchlistPage user={user} watchlist={watchlist} prices={prices} onWatch={toggleWatch} onTrade={(sym)=>setPage("trade")}/>,
     database:<DatabasePage user={user} toast={toast}/>,
-    settings:<SettingsPage user={user} theme={theme} setTheme={setTheme} toast={toast} onLogout={()=>{setUser(null);setPortfolio({});setHistory([]);setWatchlist([]);setPage("dashboard");}}/>,
+    settings:<SettingsPage user={user} theme={theme} setTheme={setTheme} toast={toast} onLogout={()=>{clearToken();setUser(null);setPortfolio({});setHistory([]);setWatchlist([]);setPage("dashboard");}}/>,
   };
 
   return (
@@ -804,9 +801,11 @@ export default function App(){
 function GlobalStyles({theme}){
   const dark=`--bg:#0d1117;--card:#161b22;--card2:#1c2128;--brd:rgba(255,255,255,0.08);--t1:#e6edf3;--t2:#8b949e;--t3:#484f58;--acc:#6366f1;`;
   const light=`--bg:#f0f4f8;--card:#ffffff;--card2:#f8fafc;--brd:rgba(0,0,0,0.08);--t1:#0d1117;--t2:#57606a;--t3:#8c959f;--acc:#6366f1;`;
+  const vars=theme==="dark"?dark:light;
   return (
     <style>{`
-      :root{${theme==="dark"?dark:light}font-family:'DM Sans',system-ui,sans-serif;}
+      :root,body,[data-theme]{${vars}font-family:'DM Sans',system-ui,sans-serif;}
+      body{background:var(--bg);color:var(--t1);margin:0;}
       @keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
       @keyframes fadeIn{from{opacity:0}to{opacity:1}}
       @keyframes spin{to{transform:rotate(360deg)}}
@@ -1161,46 +1160,6 @@ function MarketsPage({portfolio,prices,watchlist,onWatch,onTrade}){
   );
 }
 
-
-/* ════════════════════════════════════════════════════════════════
-   SECTOR P&L BAR CHART — Visualisation 3 on Dashboard
-   ════════════════════════════════════════════════════════════════ */
-function SectorPnLChart({portfolio,prices}){
-  const sectorData={};
-  Object.entries(portfolio).forEach(([sym,h])=>{
-    const sec=STOCKS[sym]?.sector||"Other";
-    const cur=prices[sym]||h.avgPrice;
-    if(!sectorData[sec]) sectorData[sec]={pnl:0,val:0};
-    sectorData[sec].pnl+=(cur-h.avgPrice)*h.qty;
-    sectorData[sec].val+=cur*h.qty;
-  });
-  const entries=Object.entries(sectorData).sort((a,b)=>b[1].pnl-a[1].pnl);
-  if(!entries.length) return <div style={{color:"var(--t3)",fontSize:13,padding:"20px 0",textAlign:"center"}}>No holdings to display</div>;
-  const maxAbs=Math.max(...entries.map(([,v])=>Math.abs(v.pnl)))||1;
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-      {entries.map(([sec,{pnl,val}])=>{
-        const pct=(pnl/val)*100;
-        const isPos=pnl>=0;
-        const barW=(Math.abs(pnl)/maxAbs)*100;
-        return (
-          <div key={sec} style={{display:"grid",gridTemplateColumns:"110px 1fr 90px 70px",alignItems:"center",gap:10}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <div style={{width:8,height:8,borderRadius:2,background:SECTOR_COLORS[sec]||"#6366f1",flexShrink:0}}/>
-              <span style={{fontSize:12,fontWeight:600,color:"var(--t1)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec}</span>
-            </div>
-            <div style={{height:20,background:"var(--card2)",borderRadius:4,overflow:"hidden",position:"relative"}}>
-              <div style={{position:"absolute",top:0,bottom:0,left:0,width:`${barW}%`,background:isPos?"#22c55e":"#ef4444",borderRadius:4,opacity:0.8}}/>
-            </div>
-            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:isPos?"#22c55e":"#ef4444"}}>{isPos?"+":""}{fmtC(pnl)}</div>
-            <div style={{textAlign:"right",fontSize:11,color:isPos?"#22c55e":"#ef4444",fontWeight:600}}>{isPos?"+":""}{fmt(pct,2)}%</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ════════════════════════════════════════════════════════════════
    DASHBOARD PAGE
 
@@ -1223,19 +1182,57 @@ function SectorPnLChart({portfolio,prices}){
      Reason: Ensures the displayed risk score is always consistent with the
      latest live valuations.
    ════════════════════════════════════════════════════════════════ */
-function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,history,user}){
-  const n=Object.keys(portfolio).length;
-  const niftyPrice=prices["^NSEI"]||livePrice("^NSEI")||22847;
-  const niftyRet=((niftyPrice-22800)/22800)*100;
-  const outperf=totalPnLPct-niftyRet;
 
-  // ── Interactive date range filter (Visualisation 1 control) ──────────────
+/* ════════════════════════════════════════════════════════════════
+   SECTOR P&L BAR CHART — Visualisation 3
+   ════════════════════════════════════════════════════════════════ */
+function SectorPnLChart({portfolio,prices}){
+  const sectorData={};
+  Object.entries(portfolio).forEach(([sym,h])=>{
+    const sec=STOCKS[sym]?.sector||"Other";
+    const cur=prices[sym]||h.avgPrice;
+    if(!sectorData[sec]) sectorData[sec]={pnl:0,val:0};
+    sectorData[sec].pnl+=(cur-h.avgPrice)*h.qty;
+    sectorData[sec].val+=cur*h.qty;
+  });
+  const entries=Object.entries(sectorData).sort((a,b)=>b[1].pnl-a[1].pnl);
+  if(!entries.length) return <div style={{color:"var(--t3)",fontSize:13,padding:"20px 0",textAlign:"center"}}>No holdings yet</div>;
+  const maxAbs=Math.max(...entries.map(([,v])=>Math.abs(v.pnl)))||1;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {entries.map(([sec,{pnl,val}])=>{
+        const pct=val?(pnl/val)*100:0;
+        const isPos=pnl>=0;
+        const barW=(Math.abs(pnl)/maxAbs)*100;
+        return (
+          <div key={sec} style={{display:"grid",gridTemplateColumns:"100px 1fr 90px 60px",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
+              <div style={{width:8,height:8,borderRadius:2,background:SECTOR_COLORS[sec]||"#6366f1",flexShrink:0}}/>
+              <span style={{fontSize:11,fontWeight:600,color:"var(--t1)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec}</span>
+            </div>
+            <div style={{height:18,background:"var(--card2)",borderRadius:4,overflow:"hidden"}}>
+              <div style={{height:"100%",width:barW+"%",background:isPos?"#22c55e":"#ef4444",borderRadius:4,opacity:0.8}}/>
+            </div>
+            <div style={{textAlign:"right",fontSize:11,fontWeight:700,color:isPos?"#22c55e":"#ef4444"}}>{isPos?"+":""}{fmtC(pnl)}</div>
+            <div style={{textAlign:"right",fontSize:10,color:isPos?"#22c55e":"#ef4444",fontWeight:600}}>{isPos?"+":""}{fmt(pct,1)}%</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,history,user}){
   const [dateRange,setDateRange]=useState("30");
   const filteredHistory=history.filter((_,i,arr)=>{
     if(dateRange==="all") return true;
     const days=parseInt(dateRange);
     return i>=arr.length-days;
   });
+  const n=Object.keys(portfolio).length;
+  const niftyPrice=prices["^NSEI"]||livePrice("^NSEI")||22847;
+  const niftyRet=((niftyPrice-22800)/22800)*100;
+  const outperf=totalPnLPct-niftyRet;
 
   const topHoldings=Object.entries(portfolio)
     .map(([sym,h])=>({sym,...h,cur:prices[sym]||h.avgPrice,val:(prices[sym]||h.avgPrice)*h.qty}))
@@ -1271,27 +1268,27 @@ function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,hist
       {/* Charts row */}
       <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
             <div>
               <div style={{fontWeight:700,fontSize:15}}>Portfolio Value History</div>
-              <div style={{fontSize:12,color:"var(--t3)"}}>Last {filteredHistory.length} days shown</div>
+              <div style={{fontSize:12,color:"var(--t3)"}}>Last {history.length} days</div>
             </div>
-            <div style={{display:"flex",gap:5}}>
-              {["7","14","30","60","all"].map(d=>(
-                <button key={d} onClick={()=>setDateRange(d)}
-                  style={{padding:"4px 10px",borderRadius:16,border:"1px solid var(--brd)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
-                    background:dateRange===d?"var(--acc)":"transparent",color:dateRange===d?"#fff":"var(--t2)",transition:"all 0.15s"}}>
-                  {d==="all"?"All":`${d}D`}
-                </button>
-              ))}
-            </div>
+            {history.length>=2&&(
+              <div style={{textAlign:"right"}}>
+                <div style={{fontWeight:700,fontSize:15,color:totalPnL>=0?"#22c55e":"#ef4444"}}>{fmtC(totalVal)}</div>
+                <div style={{fontSize:11,color:"var(--t3)"}}>Current value</div>
+              </div>
+            )}
           </div>
-          {filteredHistory.length>=2&&(
-            <div style={{textAlign:"right",marginBottom:6}}>
-              <span style={{fontWeight:700,fontSize:14,color:totalPnL>=0?"#22c55e":"#ef4444"}}>{fmtC(totalVal)}</span>
-              <span style={{fontSize:11,color:"var(--t3)",marginLeft:6}}>Current value</span>
-            </div>
-          )}
+          <div style={{display:"flex",gap:4,marginBottom:8}}>
+            {["7","14","30","60","all"].map(d=>(
+              <button key={d} onClick={()=>setDateRange(d)}
+                style={{padding:"3px 10px",borderRadius:14,border:"1px solid var(--brd)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                  background:dateRange===d?"var(--acc)":"transparent",color:dateRange===d?"#fff":"var(--t2)"}}>
+                {d==="all"?"All":d+"D"}
+              </button>
+            ))}
+          </div>
           <MiniLineChart data={filteredHistory} height={150} showDots/>
           {filteredHistory.length>=2&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--t3)",marginTop:6}}><span>{filteredHistory[0]?.date}</span><span>{filteredHistory[filteredHistory.length-1]?.date}</span></div>}
         </Card>
@@ -1360,11 +1357,11 @@ function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,hist
         </Card>
       </div>
 
-      {/* Visualisation 3: Sector P&L Bar Chart */}
+      {/* Visualisation 3: Sector P&L */}
       {n>0&&(
         <Card style={{marginBottom:18}}>
           <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>Sector Performance (P&L)</div>
-          <div style={{fontSize:12,color:"var(--t3)",marginBottom:14}}>Unrealised gain / loss by sector</div>
+          <div style={{fontSize:12,color:"var(--t3)",marginBottom:12}}>Unrealised gain / loss by sector</div>
           <SectorPnLChart portfolio={portfolio} prices={prices}/>
         </Card>
       )}
@@ -1656,7 +1653,10 @@ function SimulatePage({portfolio,prices,risk,toast,user}){
   const [loading,setLoading]=useState(false);
   const [aiInsight,setAiInsight]=useState("");
   const [aiLoading,setAiLoading]=useState(false);
-  const [history,setHistory]=useState(()=>simDB.all(user.username));
+  const [history,setHistory]=useState([]);
+  useEffect(()=>{
+    apiFetch("/simulations").then(d=>setHistory(d||[])).catch(()=>{});
+  },[]);
 
   const simulate=async()=>{
     if(!selected||!amount||+amount<=0){toast("Select a stock and enter amount","error");return;}
@@ -1678,8 +1678,10 @@ function SimulatePage({portfolio,prices,risk,toast,user}){
 
     const res={before:{risk:beforeRisk,val:beforeVal},after:{risk:afterRisk,val:afterVal},symbol:selected.symbol,qty,price,amount:qty*price};
     setResults(res);
-    simDB.save(user.username,{symbol:selected.symbol,amount:+amount,qty,price,beforeScore:beforeRisk.score,afterScore:afterRisk.score});
-    setHistory(simDB.all(user.username));
+    try{
+      await apiFetch("/simulations",{method:"POST",body:JSON.stringify({symbol:selected.symbol,amount:+amount,qty,price,before_score:beforeRisk.score,after_score:afterRisk.score})});
+      apiFetch("/simulations").then(d=>setHistory(d||[]));
+    }catch(e){ console.error("Sim save failed:",e.message); }
     setLoading(false);
 
     // AI insight
@@ -1813,14 +1815,14 @@ Give 2-3 sharp, specific insights about this decision. Focus on diversification 
               <tbody>
                 {history.slice(0,8).map(s=>(
                   <tr key={s.id}>
-                    <td style={{fontSize:12,color:"var(--t3)"}}>{new Date(s.date).toLocaleDateString("en-IN")}</td>
+                    <td style={{fontSize:12,color:"var(--t3)"}}>{new Date(s.created_at||s.date).toLocaleDateString("en-IN")}</td>
                     <td style={{fontWeight:700}}>{s.symbol}</td>
                     <td>{fmtC(s.amount)}</td>
                     <td>{s.qty}</td>
-                    <td><span style={{color:RC(s.beforeScore>=70?"High":s.beforeScore>=40?"Medium":"Low"),fontWeight:600}}>{s.beforeScore}/100</span></td>
-                    <td><span style={{color:RC(s.afterScore>=70?"High":s.afterScore>=40?"Medium":"Low"),fontWeight:600}}>{s.afterScore}/100</span></td>
-                    <td style={{color:(s.afterScore-s.beforeScore)<=0?"#22c55e":"#ef4444",fontWeight:700}}>
-                      {(s.afterScore-s.beforeScore)<=0?"▼":"▲"} {Math.abs(s.afterScore-s.beforeScore)} pts
+                    <td><span style={{color:RC(s.before_score||s.beforeScore||0>=70?"High":s.before_score||s.beforeScore||0>=40?"Medium":"Low"),fontWeight:600}}>{s.before_score||s.beforeScore||0}/100</span></td>
+                    <td><span style={{color:RC(s.after_score||s.afterScore||0>=70?"High":s.after_score||s.afterScore||0>=40?"Medium":"Low"),fontWeight:600}}>{s.after_score||s.afterScore||0}/100</span></td>
+                    <td style={{color:(s.after_score||s.afterScore||0-s.before_score||s.beforeScore||0)<=0?"#22c55e":"#ef4444",fontWeight:700}}>
+                      {(s.after_score||s.afterScore||0-s.before_score||s.beforeScore||0)<=0?"▼":"▲"} {Math.abs(s.after_score||s.afterScore||0-s.before_score||s.beforeScore||0)} pts
                     </td>
                   </tr>
                 ))}
@@ -1837,7 +1839,10 @@ Give 2-3 sharp, specific insights about this decision. Focus on diversification 
    TRANSACTIONS PAGE
    ════════════════════════════════════════════════════════════════ */
 function TransactionsPage({user,portfolio,prices,toast}){
-  const [txns,setTxns]=useState(()=>txnDB.all(user.username));
+  const [txns,setTxns]=useState([]);
+  useEffect(()=>{
+    apiFetch("/transactions?limit=500").then(d=>setTxns(d||[])).catch(()=>{});
+  },[]);
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
   const [confirm,setConfirm]=useState(null);
@@ -1853,15 +1858,17 @@ function TransactionsPage({user,portfolio,prices,toast}){
   const totalBuyVal=buys.reduce((s,t)=>s+t.qty*t.price,0);
   const totalSellVal=sells.reduce((s,t)=>s+t.qty*t.price,0);
 
-  const delTxn=(id)=>{
-    txnDB.del(user.username,id);
-    setTxns(txnDB.all(user.username));
-    toast("Transaction deleted","info");
+  const delTxn=async(id)=>{
+    try{
+      await apiFetch("/transactions/"+id,{method:"DELETE"});
+      setTxns(t=>t.filter(x=>x.id!==id));
+      toast("Transaction deleted","info");
+    }catch(e){ toast("Delete failed: "+e.message,"error"); }
     setConfirm(null);
   };
 
   const exportCSV=()=>{
-    const rows=["Date,Type,Symbol,Qty,Price,Total",...txns.map(t=>`${new Date(t.date).toLocaleDateString("en-IN")},${t.type},${t.symbol},${t.qty},${t.price},${t.qty*t.price}`)];
+    const rows=["Date,Type,Symbol,Qty,Price,Total",...txns.map(t=>`${new Date(t.created_at||t.date).toLocaleDateString("en-IN")},${t.type},${t.symbol},${t.qty},${t.price},${t.qty*t.price}`)];
     const blob=new Blob([rows.join("\n")],{type:"text/csv"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="stockiq_transactions.csv"; a.click();
     toast("Transactions exported as CSV","success");
@@ -1908,7 +1915,7 @@ function TransactionsPage({user,portfolio,prices,toast}){
                 const pnlOnSell=t.type==="sell"?(t.price-(portfolio[t.symbol]?.avgPrice||t.price))*t.qty:null;
                 return (
                   <tr key={t.id}>
-                    <td style={{fontSize:12,color:"var(--t3)"}}>{new Date(t.date).toLocaleString("en-IN",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
+                    <td style={{fontSize:12,color:"var(--t3)"}}>{new Date(t.created_at||t.date).toLocaleString("en-IN",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"})}</td>
                     <td>
                       <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700,
                         background:t.type==="buy"?"#22c55e20":"#ef444420",color:t.type==="buy"?"#22c55e":"#ef4444"}}>
@@ -2006,7 +2013,10 @@ function WatchlistPage({user,watchlist,prices,onWatch,onTrade}){
 function RiskAnalysisPage({portfolio,prices,risk,user,totalVal,history}){
   const [aiReport,setAiReport]=useState("");
   const [aiLoading,setAiLoading]=useState(false);
-  const [snapshots,setSnapshots]=useState(()=>riskDB.all(user.username));
+  const [snapshots,setSnapshots]=useState([]);
+  useEffect(()=>{
+    apiFetch("/risk").then(d=>setSnapshots(d||[])).catch(()=>{});
+  },[]);
   const [activeTab,setActiveTab]=useState("overview");
 
   const holdings=Object.entries(portfolio).map(([sym,h])=>{
@@ -2050,9 +2060,11 @@ function RiskAnalysisPage({portfolio,prices,risk,user,totalVal,history}){
   }).sort((a,b)=>b.riskScore-a.riskScore);
 
   // ── Save snapshot ────────────────────────────────────────────
-  const saveSnapshot=()=>{
-    riskDB.save(user.username,{score:risk.score,level:risk.level,sectors:risk.sectors,holdings:n,subScores:{diversScore,concentScore,stockConcScore,sectorDivScore}});
-    setSnapshots(riskDB.all(user.username));
+  const saveSnapshot=async()=>{
+    try{
+      await apiFetch("/risk",{method:"POST",body:JSON.stringify({score:risk.score,level:risk.level,holdings:n})});
+      apiFetch("/risk").then(d=>setSnapshots(d||[]));
+    }catch(e){ toast("Snapshot save failed: "+e.message,"error"); }
   };
 
   // ── AI Full Report ───────────────────────────────────────────
@@ -2563,20 +2575,32 @@ function DatabasePage({user,toast}){
   const [confirmClear,setConfirmClear]=useState(null);
   const [search,setSearch]=useState("");
 
-  const refresh=useCallback(()=>{
-    const uid=user.username;
-    setStats(getDBStats(uid));
-    const portfolio=portDB.get(uid);
-    const txns=txnDB.all(uid);
-    const history=histDB.get(uid);
-    const watchlist=watchDB.get(uid).map((sym,i)=>({id:i,symbol:sym,name:STOCKS[sym]?.name||sym,sector:STOCKS[sym]?.sector||"Other",price:livePrice(sym)}));
-    const simulations=simDB.all(uid);
-    const users_all=usersDB.all();
-    const risk_all=riskDB.all(uid);
-
-    const portfolioRows=Object.entries(portfolio).map(([sym,h])=>({symbol:sym,quantity:h.qty,avg_price:h.avgPrice,current_price:livePrice(sym)||h.avgPrice,sector:STOCKS[sym]?.sector||"Other"}));
-
-    setData({portfolio:portfolioRows,txns,history,watchlist,simulations,users:Object.values(users_all).map(u=>({username:u.username,email:u.email||"—",created:u.createdAt?.slice(0,10)||"—"})),risk:risk_all});
+  const refresh=useCallback(async()=>{
+    try{
+      const [portData,txnsData,histData,watchData,simData,riskData] = await Promise.all([
+        apiFetch("/portfolio"),
+        apiFetch("/transactions?limit=500"),
+        apiFetch("/history"),
+        apiFetch("/watchlist"),
+        apiFetch("/simulations"),
+        apiFetch("/risk"),
+      ]);
+      const portfolioRows=(portData?.holdings||[]).map(h=>({symbol:h.symbol,quantity:h.qty,avg_price:h.avg_price,current_price:livePrice(h.symbol)||h.avg_price,sector:STOCKS[h.symbol]?.sector||"Other"}));
+      const watchlistRows=(watchData||[]).map((w,i)=>{const sym=w.symbol||w;return{id:i,symbol:sym,name:STOCKS[sym]?.name||sym,sector:STOCKS[sym]?.sector||"Other",price:livePrice(sym)};});
+      const txnRows=(txnsData||[]).map(t=>({...t,date:t.created_at||t.date}));
+      const histRows=(histData||[]).map(h=>({date:h.date,value:h.value}));
+      const simRows=(simData||[]).map(s=>({...s,date:s.created_at||s.date,beforeScore:s.before_score,afterScore:s.after_score}));
+      const riskRows=(riskData||[]).map(r=>({...r,date:r.created_at||r.date}));
+      setStats({
+        portfolio:{count:portfolioRows.length,label:"Holdings",icon:"📊"},
+        txns:{count:txnRows.length,label:"Transactions",icon:"💸"},
+        history:{count:histRows.length,label:"History Entries",icon:"📈"},
+        watchlist:{count:watchlistRows.length,label:"Watchlist",icon:"⭐"},
+        simulations:{count:simRows.length,label:"Simulations",icon:"🔮"},
+        risk:{count:riskRows.length,label:"Risk Snapshots",icon:"⚠️"},
+      });
+      setData({portfolio:portfolioRows,txns:txnRows,history:histRows,watchlist:watchlistRows,simulations:simRows,risk:riskRows});
+    }catch(e){ console.error("DB refresh error:",e.message); }
   },[user.username]);
 
   useEffect(()=>{ refresh(); const iv=setInterval(refresh,5000); return()=>clearInterval(iv); },[refresh]);
@@ -2587,7 +2611,7 @@ function DatabasePage({user,toast}){
     history:{label:"Price History",icon:"📈",cols:["date","value"]},
     watchlist:{label:"Watchlist",icon:"⭐",cols:["symbol","name","sector","price"]},
     simulations:{label:"Simulations",icon:"🔮",cols:["date","symbol","amount","qty","price","beforeScore","afterScore"]},
-    users:{label:"Users",icon:"👤",cols:["username","email","created"]},
+    // users table removed — not accessible via regular user token
     risk:{label:"Risk Snapshots",icon:"⚠️",cols:["date","score","level"]},
   };
 
@@ -2608,16 +2632,9 @@ function DatabasePage({user,toast}){
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`stockiq_${activeTable}.csv`; a.click();
     toast(`Exported ${activeTable} as CSV`,"success");
   };
-  const clearTable=()=>{
-    const uid=user.username;
-    if(confirmClear==="portfolio"){portDB.save(uid,{});toast("Portfolio cleared","info");}
-    else if(confirmClear==="txns"){DB.del(`txns:${uid}`);toast("Transactions cleared","info");}
-    else if(confirmClear==="history"){DB.del(`history:${uid}`);toast("History cleared","info");}
-    else if(confirmClear==="watchlist"){DB.del(`watchlist:${uid}`);toast("Watchlist cleared","info");}
-    else if(confirmClear==="simulations"){DB.del(`simulations:${uid}`);toast("Simulations cleared","info");}
-    else if(confirmClear==="risk"){DB.del(`risk:${uid}`);toast("Risk snapshots cleared","info");}
+  const clearTable=async()=>{
+    toast("Clearing is managed via the backend. Use DELETE /users/me to remove all data.","info");
     setConfirmClear(null);
-    setTimeout(refresh,100);
   };
 
   const exportAll=()=>{
@@ -2626,20 +2643,7 @@ function DatabasePage({user,toast}){
     toast("Full database exported","success");
   };
   const importData=(e)=>{
-    const file=e.target.files?.[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      try{
-        const json=JSON.parse(ev.target.result);
-        const uid=user.username;
-        if(json.portfolio){const p={}; json.portfolio.forEach(r=>{p[r.symbol]={qty:r.quantity,avgPrice:r.avg_price};}); portDB.save(uid,p);}
-        if(json.txns){DB.set(`txns:${uid}`,json.txns);}
-        if(json.history){DB.set(`history:${uid}`,json.history);}
-        if(json.watchlist){DB.set(`watchlist:${uid}`,json.watchlist.map(w=>w.symbol||w));}
-        refresh(); toast("Data imported successfully","success");
-      }catch{toast("Invalid JSON file","error");}
-    };
-    reader.readAsText(file);
+    toast("Import not available — data is managed by the FastAPI backend.","info");
   };
 
   const fmtCell=(key,val)=>{
@@ -2671,7 +2675,7 @@ function DatabasePage({user,toast}){
       {/* DB Stats */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:10,marginBottom:22}}>
         {Object.entries(stats).map(([k,v])=>(
-          <div key={k} onClick={()=>setActiveTable(k==="users"?"users":k==="portfolio"?"portfolio":k==="txns"?"txns":k==="history"?"history":k==="watchlist"?"watchlist":k==="simulations"?"simulations":"risk")}
+          <div key={k} onClick={()=>setActiveTable(k==="portfolio"?"portfolio":k==="txns"?"txns":k==="history"?"history":k==="watchlist"?"watchlist":k==="simulations"?"simulations":"risk")}
             style={{background:activeTable===k?"var(--acc)":"var(--card2)",border:`1px solid ${activeTable===k?"var(--acc)":"var(--brd)"}`,borderRadius:12,padding:"12px 14px",cursor:"pointer",transition:"all 0.18s"}}>
             <div style={{fontSize:18,marginBottom:6}}>{v.icon}</div>
             <div style={{fontSize:20,fontWeight:800,color:activeTable===k?"#fff":"var(--t1)"}}>{v.count}</div>
@@ -2754,33 +2758,36 @@ function SettingsPage({user,theme,setTheme,toast,onLogout}){
   const [profile,setProfile]=useState({username:user.username,email:user.email||""});
   const [pwd,setPwd]=useState({current:"",new1:"",new2:""});
   const [confirmDel,setConfirmDel]=useState(false);
-  const stats=getDBStats(user.username);
+  const [stats,setStats]=useState({portfolio:{count:0,label:'Holdings',icon:'📊'},txns:{count:0,label:'Transactions',icon:'💸'},history:{count:0,label:'History Entries',icon:'📈'},watchlist:{count:0,label:'Watchlist',icon:'⭐'},simulations:{count:0,label:'Simulations',icon:'🔮'},risk:{count:0,label:'Risk Snapshots',icon:'⚠️'}});
+  useEffect(()=>{
+    Promise.all([apiFetch('/portfolio'),apiFetch('/transactions?limit=500'),apiFetch('/history'),apiFetch('/watchlist'),apiFetch('/simulations'),apiFetch('/risk')]).then(([p,t,h,w,s,r])=>{
+      setStats({portfolio:{count:(p?.holdings||[]).length,label:'Holdings',icon:'📊'},txns:{count:(t||[]).length,label:'Transactions',icon:'💸'},history:{count:(h||[]).length,label:'History Entries',icon:'📈'},watchlist:{count:(w||[]).length,label:'Watchlist',icon:'⭐'},simulations:{count:(s||[]).length,label:'Simulations',icon:'🔮'},risk:{count:(r||[]).length,label:'Risk Snapshots',icon:'⚠️'}});
+    }).catch(()=>{});
+  },[]);
 
-  const saveProfile=()=>{
-    const u=usersDB.get(user.username);
-    usersDB.save(user.username,{...u,email:profile.email});
-    toast("Profile updated","success");
+  const saveProfile=async()=>{
+    try{
+      await apiFetch("/users/me/email",{method:"PUT",body:JSON.stringify({email:profile.email})});
+      toast("Profile updated","success");
+    }catch(e){ toast("Update failed: "+e.message,"error"); }
   };
-  const changePwd=()=>{
-    const u=usersDB.get(user.username);
-    if(u.passwordHash!==hashPwd(pwd.current)){toast("Current password incorrect","error");return;}
+  const changePwd=async()=>{
     if(pwd.new1.length<4){toast("New password must be 4+ chars","error");return;}
     if(pwd.new1!==pwd.new2){toast("Passwords don't match","error");return;}
-    usersDB.save(user.username,{...u,passwordHash:hashPwd(pwd.new1)});
+    toast("Password change requires re-registration via the backend API.","info");
     setPwd({current:"",new1:"",new2:""});
-    toast("Password changed","success");
   };
-  const deleteData=()=>{
-    const uid=user.username;
-    portDB.save(uid,{}); DB.del(`txns:${uid}`); DB.del(`history:${uid}`);
-    DB.del(`watchlist:${uid}`); DB.del(`simulations:${uid}`); DB.del(`risk:${uid}`);
-    setConfirmDel(false);
-    toast("All data cleared","info");
+  const deleteData=async()=>{
+    try{
+      await apiFetch("/users/me",{method:"DELETE"});
+      setConfirmDel(false);
+      clearToken();
+      onLogout();
+      toast("Account and all data deleted","info");
+    }catch(e){ toast("Delete failed: "+e.message,"error"); }
   };
 
-  const storageSize=(()=>{
-    try{let s=0;for(const k of Object.keys(localStorage)){if(k.startsWith(APP))s+=localStorage[k].length;}return(s/1024).toFixed(1)+"KB";}catch{return "N/A";}
-  })();
+  const storageSize="(via FastAPI backend)";
 
   return (
     <div className="ani" style={{maxWidth:680}}>
