@@ -16,46 +16,161 @@ const todayS=()       => new Date().toISOString().split("T")[0];
 const clamp=(v,a,b)   => Math.min(b,Math.max(a,v));
 const RC   = (level)  => ({High:"#ef4444",Medium:"#f59e0b",Low:"#22c55e","No Holdings":"#6366f1"})[level]||"#6366f1";
 
-// ─── Stock master data ────────────────────────────────────────────────────────
+// ─── Stock master data — 60 NSE stocks with full fundamentals ────────────────
+// Fields: name, sector, base price, mktCap, pe, eps, roe, debtEquity,
+//         divYield, revenueGrowth, w52h (52-week high), w52l (52-week low),
+//         volatility (annualised %), rating ("Strong Buy"|"Buy"|"Hold"|"Sell")
 const STOCKS = {
-  "RELIANCE.NS" :{ name:"Reliance Industries",      sector:"Energy",        base:2847.5, mktCap:"₹19.2L Cr", pe:28.4 },
-  "TCS.NS"      :{ name:"Tata Consultancy Svcs",    sector:"IT",            base:3921.0, mktCap:"₹14.2L Cr", pe:32.1 },
-  "HDFCBANK.NS" :{ name:"HDFC Bank",                sector:"Banking",       base:1654.3, mktCap:"₹12.6L Cr", pe:20.3 },
-  "INFY.NS"     :{ name:"Infosys",                  sector:"IT",            base:1432.8, mktCap:"₹6.0L Cr",  pe:26.8 },
-  "ICICIBANK.NS":{ name:"ICICI Bank",               sector:"Banking",       base:1089.6, mktCap:"₹7.7L Cr",  pe:18.4 },
-  "HINDUNILVR.NS":{ name:"Hindustan Unilever",      sector:"FMCG",          base:2634.1, mktCap:"₹6.2L Cr",  pe:55.6 },
-  "SBIN.NS"     :{ name:"State Bank of India",      sector:"Banking",       base:812.4,  mktCap:"₹7.3L Cr",  pe:10.2 },
-  "BAJFINANCE.NS":{ name:"Bajaj Finance",           sector:"NBFC",          base:6847.2, mktCap:"₹4.2L Cr",  pe:34.2 },
-  "WIPRO.NS"    :{ name:"Wipro",                    sector:"IT",            base:456.9,  mktCap:"₹2.4L Cr",  pe:21.4 },
-  "LT.NS"       :{ name:"Larsen & Toubro",          sector:"Infrastructure",base:3512.0, mktCap:"₹5.0L Cr",  pe:35.1 },
-  "ASIANPAINT.NS":{ name:"Asian Paints",            sector:"Consumer",      base:2891.5, mktCap:"₹2.8L Cr",  pe:54.2 },
-  "MARUTI.NS"   :{ name:"Maruti Suzuki",            sector:"Auto",          base:11240.0,mktCap:"₹3.6L Cr",  pe:27.3 },
-  "SUNPHARMA.NS":{ name:"Sun Pharmaceutical",       sector:"Pharma",        base:1678.4, mktCap:"₹4.0L Cr",  pe:38.6 },
-  "DRREDDYS.NS" :{ name:"Dr. Reddy's Laboratories", sector:"Pharma",        base:5892.0, mktCap:"₹1.0L Cr",  pe:22.1 },
-  "TITAN.NS"    :{ name:"Titan Company",            sector:"Consumer",      base:3467.8, mktCap:"₹3.1L Cr",  pe:88.4 },
-  "NESTLEIND.NS":{ name:"Nestle India",             sector:"FMCG",          base:2341.6, mktCap:"₹2.3L Cr",  pe:72.4 },
-  "POWERGRID.NS":{ name:"Power Grid Corporation",   sector:"Utilities",     base:312.4,  mktCap:"₹2.9L Cr",  pe:18.2 },
-  "NTPC.NS"     :{ name:"NTPC Limited",             sector:"Utilities",     base:378.9,  mktCap:"₹3.7L Cr",  pe:16.8 },
-  "ONGC.NS"     :{ name:"Oil & Natural Gas Corp",   sector:"Energy",        base:278.3,  mktCap:"₹3.5L Cr",  pe:8.4  },
-  "TATAMOTORS.NS":{ name:"Tata Motors",             sector:"Auto",          base:934.6,  mktCap:"₹3.5L Cr",  pe:9.2  },
-  "HCLTECH.NS"  :{ name:"HCL Technologies",         sector:"IT",            base:1623.4, mktCap:"₹4.4L Cr",  pe:24.6 },
-  "AXISBANK.NS" :{ name:"Axis Bank",                sector:"Banking",       base:1134.2, mktCap:"₹3.5L Cr",  pe:15.8 },
-  "KOTAK.NS"    :{ name:"Kotak Mahindra Bank",      sector:"Banking",       base:1876.5, mktCap:"₹3.7L Cr",  pe:22.1 },
-  "ADANIENT.NS" :{ name:"Adani Enterprises",        sector:"Conglomerate",  base:2456.8, mktCap:"₹2.8L Cr",  pe:98.4 },
-  "ULTRACEMCO.NS":{ name:"UltraTech Cement",        sector:"Cement",        base:10234.0,mktCap:"₹2.9L Cr",  pe:32.4 },
-  "JSWSTEEL.NS" :{ name:"JSW Steel",                sector:"Metals",        base:912.3,  mktCap:"₹2.2L Cr",  pe:18.6 },
-  "INDUSINDBK.NS":{ name:"IndusInd Bank",           sector:"Banking",       base:1045.6, mktCap:"₹0.8L Cr",  pe:11.4 },
-  "TECHM.NS"    :{ name:"Tech Mahindra",            sector:"IT",            base:1532.4, mktCap:"₹1.5L Cr",  pe:42.3 },
-  "DIVISLAB.NS" :{ name:"Divi's Laboratories",      sector:"Pharma",        base:4823.1, mktCap:"₹1.3L Cr",  pe:54.2 },
-  "CIPLA.NS"    :{ name:"Cipla",                    sector:"Pharma",        base:1512.6, mktCap:"₹1.2L Cr",  pe:26.8 },
-  "^NSEI"       :{ name:"NIFTY 50 Index",           sector:"Index",         base:22847.0,mktCap:"—",         pe:22.4 },
+  // ── Large Cap IT ──────────────────────────────────────────────────────────
+  "TCS.NS"      :{name:"Tata Consultancy Svcs",    sector:"IT",            base:3921.0, mktCap:"₹14.2L Cr", pe:32.1, eps:123.4, roe:47.2, debtEquity:0.0,  divYield:1.4, revenueGrowth:8.2,  w52h:4592, w52l:3311, volatility:18, rating:"Strong Buy"},
+  "INFY.NS"     :{name:"Infosys",                  sector:"IT",            base:1432.8, mktCap:"₹6.0L Cr",  pe:26.8, eps:53.4,  roe:32.8, debtEquity:0.0,  divYield:2.1, revenueGrowth:6.4,  w52h:1903, w52l:1308, volatility:22, rating:"Buy"},
+  "HCLTECH.NS"  :{name:"HCL Technologies",         sector:"IT",            base:1623.4, mktCap:"₹4.4L Cr",  pe:24.6, eps:66.0,  roe:24.1, debtEquity:0.0,  divYield:3.2, revenueGrowth:9.8,  w52h:1960, w52l:1235, volatility:20, rating:"Strong Buy"},
+  "WIPRO.NS"    :{name:"Wipro",                    sector:"IT",            base:456.9,  mktCap:"₹2.4L Cr",  pe:21.4, eps:21.3,  roe:14.8, debtEquity:0.0,  divYield:1.8, revenueGrowth:3.2,  w52h:617,  w52l:396,  volatility:24, rating:"Hold"},
+  "TECHM.NS"    :{name:"Tech Mahindra",            sector:"IT",            base:1532.4, mktCap:"₹1.5L Cr",  pe:42.3, eps:36.2,  roe:10.4, debtEquity:0.1,  divYield:1.2, revenueGrowth:2.1,  w52h:1807, w52l:1068, volatility:28, rating:"Hold"},
+  "MPHASIS.NS"  :{name:"Mphasis",                  sector:"IT",            base:2312.0, mktCap:"₹0.4L Cr",  pe:28.6, eps:80.8,  roe:21.4, debtEquity:0.0,  divYield:1.6, revenueGrowth:5.4,  w52h:2790, w52l:1936, volatility:30, rating:"Buy"},
+  "LTTS.NS"     :{name:"L&T Technology Services",  sector:"IT",            base:4890.0, mktCap:"₹0.5L Cr",  pe:38.2, eps:128.0, roe:29.6, debtEquity:0.0,  divYield:1.0, revenueGrowth:12.4, w52h:6006, w52l:3965, volatility:26, rating:"Buy"},
+  // ── Banking & Finance ─────────────────────────────────────────────────────
+  "HDFCBANK.NS" :{name:"HDFC Bank",                sector:"Banking",       base:1654.3, mktCap:"₹12.6L Cr", pe:20.3, eps:81.5,  roe:16.8, debtEquity:6.8,  divYield:1.2, revenueGrowth:18.2, w52h:1880, w52l:1363, volatility:19, rating:"Strong Buy"},
+  "ICICIBANK.NS":{name:"ICICI Bank",               sector:"Banking",       base:1089.6, mktCap:"₹7.7L Cr",  pe:18.4, eps:59.2,  roe:17.2, debtEquity:5.4,  divYield:0.8, revenueGrowth:21.3, w52h:1361, w52l:898,  volatility:21, rating:"Strong Buy"},
+  "SBIN.NS"     :{name:"State Bank of India",      sector:"Banking",       base:812.4,  mktCap:"₹7.3L Cr",  pe:10.2, eps:79.7,  roe:18.1, debtEquity:11.2, divYield:1.8, revenueGrowth:24.6, w52h:912,  w52l:543,  volatility:26, rating:"Buy"},
+  "AXISBANK.NS" :{name:"Axis Bank",                sector:"Banking",       base:1134.2, mktCap:"₹3.5L Cr",  pe:15.8, eps:71.8,  roe:16.4, debtEquity:6.2,  divYield:0.1, revenueGrowth:19.8, w52h:1339, w52l:896,  volatility:23, rating:"Buy"},
+  "KOTAK.NS"    :{name:"Kotak Mahindra Bank",      sector:"Banking",       base:1876.5, mktCap:"₹3.7L Cr",  pe:22.1, eps:84.9,  roe:13.9, debtEquity:4.8,  divYield:0.1, revenueGrowth:16.4, w52h:2063, w52l:1544, volatility:20, rating:"Buy"},
+  "INDUSINDBK.NS":{name:"IndusInd Bank",           sector:"Banking",       base:1045.6, mktCap:"₹0.8L Cr",  pe:11.4, eps:91.7,  roe:14.2, debtEquity:5.9,  divYield:1.2, revenueGrowth:14.8, w52h:1694, w52l:926,  volatility:38, rating:"Hold"},
+  "BAJFINANCE.NS":{name:"Bajaj Finance",           sector:"NBFC",          base:6847.2, mktCap:"₹4.2L Cr",  pe:34.2, eps:200.2, roe:22.4, debtEquity:3.9,  divYield:0.4, revenueGrowth:28.4, w52h:8192, w52l:6187, volatility:29, rating:"Buy"},
+  "BAJAJFINSV.NS":{name:"Bajaj Finserv",           sector:"NBFC",          base:1621.0, mktCap:"₹2.6L Cr",  pe:24.8, eps:65.4,  roe:12.8, debtEquity:2.4,  divYield:0.1, revenueGrowth:22.1, w52h:2029, w52l:1419, volatility:27, rating:"Buy"},
+  "CHOLAFIN.NS" :{name:"Cholamandalam Investment",  sector:"NBFC",          base:1234.0, mktCap:"₹1.0L Cr",  pe:28.4, eps:43.4,  roe:18.6, debtEquity:4.2,  divYield:0.2, revenueGrowth:32.4, w52h:1652, w52l:988,  volatility:32, rating:"Buy"},
+  // ── Energy ────────────────────────────────────────────────────────────────
+  "RELIANCE.NS" :{name:"Reliance Industries",      sector:"Energy",        base:2847.5, mktCap:"₹19.2L Cr", pe:28.4, eps:100.2, roe:9.8,  debtEquity:0.4,  divYield:0.4, revenueGrowth:6.4,  w52h:3218, w52l:2221, volatility:20, rating:"Buy"},
+  "ONGC.NS"     :{name:"Oil & Natural Gas Corp",   sector:"Energy",        base:278.3,  mktCap:"₹3.5L Cr",  pe:8.4,  eps:33.1,  roe:14.8, debtEquity:0.2,  divYield:4.8, revenueGrowth:4.2,  w52h:345,  w52l:193,  volatility:30, rating:"Buy"},
+  "IOC.NS"      :{name:"Indian Oil Corporation",   sector:"Energy",        base:168.2,  mktCap:"₹2.4L Cr",  pe:7.4,  eps:22.7,  roe:12.4, debtEquity:0.8,  divYield:5.6, revenueGrowth:3.8,  w52h:196,  w52l:108,  volatility:34, rating:"Hold"},
+  "BPCL.NS"     :{name:"Bharat Petroleum Corp",   sector:"Energy",        base:312.8,  mktCap:"₹1.4L Cr",  pe:9.2,  eps:34.0,  roe:19.8, debtEquity:1.0,  divYield:4.2, revenueGrowth:5.1,  w52h:376,  w52l:228,  volatility:36, rating:"Hold"},
+  // ── FMCG ──────────────────────────────────────────────────────────────────
+  "HINDUNILVR.NS":{name:"Hindustan Unilever",      sector:"FMCG",          base:2634.1, mktCap:"₹6.2L Cr",  pe:55.6, eps:47.4,  roe:19.8, debtEquity:0.0,  divYield:1.8, revenueGrowth:4.2,  w52h:2778, w52l:2148, volatility:14, rating:"Hold"},
+  "NESTLEIND.NS":{name:"Nestle India",             sector:"FMCG",          base:2341.6, mktCap:"₹2.3L Cr",  pe:72.4, eps:32.3,  roe:122.4,debtEquity:0.0,  divYield:1.4, revenueGrowth:8.4,  w52h:2778, w52l:2204, volatility:15, rating:"Hold"},
+  "DABUR.NS"    :{name:"Dabur India",              sector:"FMCG",          base:524.8,  mktCap:"₹0.9L Cr",  pe:48.2, eps:10.9,  roe:20.4, debtEquity:0.0,  divYield:1.2, revenueGrowth:6.8,  w52h:672,  w52l:476,  volatility:18, rating:"Hold"},
+  "MARICO.NS"   :{name:"Marico",                   sector:"FMCG",          base:612.4,  mktCap:"₹0.8L Cr",  pe:46.8, eps:13.1,  roe:38.4, debtEquity:0.0,  divYield:1.8, revenueGrowth:5.2,  w52h:723,  w52l:504,  volatility:16, rating:"Hold"},
+  "BRITANNIA.NS":{name:"Britannia Industries",     sector:"FMCG",          base:5124.0, mktCap:"₹1.2L Cr",  pe:52.4, eps:97.8,  roe:58.2, debtEquity:0.3,  divYield:1.4, revenueGrowth:7.4,  w52h:6144, w52l:4638, volatility:17, rating:"Hold"},
+  // ── Pharma ────────────────────────────────────────────────────────────────
+  "SUNPHARMA.NS":{name:"Sun Pharmaceutical",       sector:"Pharma",        base:1678.4, mktCap:"₹4.0L Cr",  pe:38.6, eps:43.5,  roe:14.8, debtEquity:0.1,  divYield:0.8, revenueGrowth:12.4, w52h:1960, w52l:1141, volatility:22, rating:"Strong Buy"},
+  "DRREDDYS.NS" :{name:"Dr. Reddy's Laboratories", sector:"Pharma",        base:5892.0, mktCap:"₹1.0L Cr",  pe:22.1, eps:266.6, roe:16.8, debtEquity:0.1,  divYield:0.4, revenueGrowth:14.8, w52h:7220, w52l:5184, volatility:24, rating:"Strong Buy"},
+  "CIPLA.NS"    :{name:"Cipla",                    sector:"Pharma",        base:1512.6, mktCap:"₹1.2L Cr",  pe:26.8, eps:56.4,  roe:16.4, debtEquity:0.1,  divYield:0.4, revenueGrowth:10.2, w52h:1702, w52l:1145, volatility:20, rating:"Buy"},
+  "DIVISLAB.NS" :{name:"Divi's Laboratories",      sector:"Pharma",        base:4823.1, mktCap:"₹1.3L Cr",  pe:54.2, eps:89.0,  roe:20.4, debtEquity:0.0,  divYield:0.6, revenueGrowth:4.8,  w52h:5464, w52l:3350, volatility:26, rating:"Buy"},
+  "APOLLOHOSP.NS":{name:"Apollo Hospitals",        sector:"Healthcare",    base:6812.0, mktCap:"₹0.9L Cr",  pe:88.4, eps:77.1,  roe:14.8, debtEquity:0.6,  divYield:0.3, revenueGrowth:18.4, w52h:7530, w52l:5182, volatility:28, rating:"Buy"},
+  "AUROPHARMA.NS":{name:"Aurobindo Pharma",        sector:"Pharma",        base:1082.0, mktCap:"₹0.6L Cr",  pe:18.4, eps:58.8,  roe:14.2, debtEquity:0.3,  divYield:0.4, revenueGrowth:8.2,  w52h:1380, w52l:896,  volatility:28, rating:"Buy"},
+  // ── Auto ──────────────────────────────────────────────────────────────────
+  "MARUTI.NS"   :{name:"Maruti Suzuki",            sector:"Auto",          base:11240.0,mktCap:"₹3.6L Cr",  pe:27.3, eps:411.7, roe:16.8, debtEquity:0.0,  divYield:1.2, revenueGrowth:18.4, w52h:13680,w52l:9769, volatility:22, rating:"Buy"},
+  "TATAMOTORS.NS":{name:"Tata Motors",             sector:"Auto",          base:934.6,  mktCap:"₹3.5L Cr",  pe:9.2,  eps:101.6, roe:28.4, debtEquity:1.8,  divYield:0.0, revenueGrowth:22.4, w52h:1179, w52l:764,  volatility:32, rating:"Buy"},
+  "M&M.NS"      :{name:"Mahindra & Mahindra",      sector:"Auto",          base:2124.0, mktCap:"₹2.6L Cr",  pe:28.4, eps:74.8,  roe:14.8, debtEquity:0.2,  divYield:0.6, revenueGrowth:24.8, w52h:3222, w52l:1699, volatility:30, rating:"Hold"},
+  "BAJAJ-AUTO.NS":{name:"Bajaj Auto",              sector:"Auto",          base:8234.0, mktCap:"₹2.3L Cr",  pe:28.8, eps:285.9, roe:24.8, debtEquity:0.0,  divYield:1.4, revenueGrowth:14.2, w52h:12774,w52l:7110, volatility:24, rating:"Buy"},
+  "HEROMOTOCO.NS":{name:"Hero MotoCorp",           sector:"Auto",          base:4312.0, mktCap:"₹0.9L Cr",  pe:22.4, eps:192.4, roe:28.4, debtEquity:0.0,  divYield:2.4, revenueGrowth:12.4, w52h:5888, w52l:3786, volatility:22, rating:"Buy"},
+  "EICHERMOT.NS":{name:"Eicher Motors",            sector:"Auto",          base:4612.0, mktCap:"₹1.3L Cr",  pe:34.2, eps:134.8, roe:28.2, debtEquity:0.0,  divYield:1.2, revenueGrowth:18.4, w52h:5196, w52l:3447, volatility:26, rating:"Buy"},
+  // ── Consumer / Retail ─────────────────────────────────────────────────────
+  "TITAN.NS"    :{name:"Titan Company",            sector:"Consumer",      base:3467.8, mktCap:"₹3.1L Cr",  pe:88.4, eps:39.2,  roe:28.4, debtEquity:0.1,  divYield:0.4, revenueGrowth:22.4, w52h:3888, w52l:2626, volatility:24, rating:"Hold"},
+  "ASIANPAINT.NS":{name:"Asian Paints",            sector:"Consumer",      base:2891.5, mktCap:"₹2.8L Cr",  pe:54.2, eps:53.3,  roe:31.8, debtEquity:0.1,  divYield:1.2, revenueGrowth:4.2,  w52h:3394, w52l:2175, volatility:22, rating:"Hold"},
+  "DMART.NS"    :{name:"Avenue Supermarts (DMart)", sector:"Retail",        base:3812.0, mktCap:"₹2.5L Cr",  pe:88.2, eps:43.2,  roe:14.8, debtEquity:0.0,  divYield:0.0, revenueGrowth:18.2, w52h:5484, w52l:3430, volatility:28, rating:"Hold"},
+  "PAGEIND.NS"  :{name:"Page Industries (Jockey)", sector:"Consumer",      base:43280.0,mktCap:"₹0.5L Cr",  pe:62.8, eps:689.0, roe:38.4, debtEquity:0.4,  divYield:0.8, revenueGrowth:12.4, w52h:50990,w52l:37200,volatility:22, rating:"Hold"},
+  // ── Infrastructure & Capital Goods ────────────────────────────────────────
+  "LT.NS"       :{name:"Larsen & Toubro",          sector:"Infrastructure",base:3512.0, mktCap:"₹5.0L Cr",  pe:35.1, eps:100.1, roe:12.8, debtEquity:1.8,  divYield:0.8, revenueGrowth:18.8, w52h:3990, w52l:2673, volatility:22, rating:"Strong Buy"},
+  "ULTRACEMCO.NS":{name:"UltraTech Cement",        sector:"Cement",        base:10234.0,mktCap:"₹2.9L Cr",  pe:32.4, eps:315.9, roe:14.8, debtEquity:0.3,  divYield:0.4, revenueGrowth:14.2, w52h:12440,w52l:8966, volatility:22, rating:"Buy"},
+  "SHREECEM.NS" :{name:"Shree Cement",             sector:"Cement",        base:26800.0,mktCap:"₹1.0L Cr",  pe:44.8, eps:598.2, roe:12.4, debtEquity:0.2,  divYield:0.2, revenueGrowth:10.8, w52h:32530,w52l:22680,volatility:20, rating:"Hold"},
+  "ABB.NS"      :{name:"ABB India",                sector:"Infrastructure",base:6234.0, mktCap:"₹1.3L Cr",  pe:74.8, eps:83.4,  roe:24.8, debtEquity:0.0,  divYield:0.3, revenueGrowth:22.4, w52h:8956, w52l:5400, volatility:30, rating:"Hold"},
+  "SIEMENS.NS"  :{name:"Siemens India",            sector:"Infrastructure",base:7124.0, mktCap:"₹2.5L Cr",  pe:68.4, eps:104.2, roe:18.8, debtEquity:0.0,  divYield:0.4, revenueGrowth:18.2, w52h:8270, w52l:5600, volatility:28, rating:"Hold"},
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  "POWERGRID.NS":{name:"Power Grid Corporation",   sector:"Utilities",     base:312.4,  mktCap:"₹2.9L Cr",  pe:18.2, eps:17.2,  roe:18.4, debtEquity:1.4,  divYield:4.2, revenueGrowth:6.4,  w52h:366,  w52l:228,  volatility:18, rating:"Buy"},
+  "NTPC.NS"     :{name:"NTPC Limited",             sector:"Utilities",     base:378.9,  mktCap:"₹3.7L Cr",  pe:16.8, eps:22.5,  roe:12.4, debtEquity:1.6,  divYield:2.8, revenueGrowth:8.2,  w52h:448,  w52l:278,  volatility:20, rating:"Buy"},
+  "TATAPOWER.NS":{name:"Tata Power Company",       sector:"Utilities",     base:384.0,  mktCap:"₹1.2L Cr",  pe:28.4, eps:13.5,  roe:9.8,  debtEquity:1.8,  divYield:0.6, revenueGrowth:12.8, w52h:494,  w52l:321,  volatility:30, rating:"Hold"},
+  "ADANIGREEN.NS":{name:"Adani Green Energy",      sector:"Utilities",     base:1724.0, mktCap:"₹2.7L Cr",  pe:188.4,eps:9.1,   roe:8.4,  debtEquity:8.4,  divYield:0.0, revenueGrowth:28.4, w52h:2174, w52l:942,  volatility:48, rating:"Hold"},
+  // ── Metals & Mining ───────────────────────────────────────────────────────
+  "JSWSTEEL.NS" :{name:"JSW Steel",                sector:"Metals",        base:912.3,  mktCap:"₹2.2L Cr",  pe:18.6, eps:49.0,  roe:14.2, debtEquity:1.0,  divYield:1.2, revenueGrowth:8.4,  w52h:1063, w52l:743,  volatility:28, rating:"Hold"},
+  "TATASTEEL.NS":{name:"Tata Steel",               sector:"Metals",        base:168.4,  mktCap:"₹2.1L Cr",  pe:22.4, eps:7.5,   roe:8.8,  debtEquity:1.8,  divYield:1.8, revenueGrowth:4.2,  w52h:184,  w52l:120,  volatility:32, rating:"Hold"},
+  "HINDALCO.NS" :{name:"Hindalco Industries",      sector:"Metals",        base:634.8,  mktCap:"₹1.4L Cr",  pe:14.8, eps:42.9,  roe:12.4, debtEquity:0.8,  divYield:0.8, revenueGrowth:6.4,  w52h:772,  w52l:514,  volatility:26, rating:"Buy"},
+  "COALINDIA.NS":{name:"Coal India",               sector:"Metals",        base:462.4,  mktCap:"₹2.9L Cr",  pe:8.4,  eps:55.0,  roe:58.4, debtEquity:0.0,  divYield:5.8, revenueGrowth:4.2,  w52h:544,  w52l:356,  volatility:22, rating:"Buy"},
+  // ── Conglomerate / Others ─────────────────────────────────────────────────
+  "ADANIENT.NS" :{name:"Adani Enterprises",        sector:"Conglomerate",  base:2456.8, mktCap:"₹2.8L Cr",  pe:98.4, eps:24.9,  roe:8.8,  debtEquity:2.4,  divYield:0.0, revenueGrowth:34.2, w52h:3244, w52l:2037, volatility:44, rating:"Hold"},
+  "ITC.NS"      :{name:"ITC Limited",              sector:"FMCG",          base:468.2,  mktCap:"₹5.8L Cr",  pe:28.4, eps:16.5,  roe:28.4, debtEquity:0.0,  divYield:3.4, revenueGrowth:8.4,  w52h:528,  w52l:401,  volatility:16, rating:"Strong Buy"},
+  "TATACONSUM.NS":{name:"Tata Consumer Products",  sector:"FMCG",          base:1082.0, mktCap:"₹1.0L Cr",  pe:64.2, eps:16.9,  roe:9.8,  debtEquity:0.1,  divYield:0.8, revenueGrowth:12.4, w52h:1264, w52l:878,  volatility:22, rating:"Hold"},
+  "GODREJCP.NS" :{name:"Godrej Consumer Products", sector:"FMCG",          base:1234.0, mktCap:"₹1.3L Cr",  pe:44.8, eps:27.5,  roe:18.4, debtEquity:0.2,  divYield:0.8, revenueGrowth:10.2, w52h:1558, w52l:994,  volatility:20, rating:"Hold"},
+  "PIDILITIND.NS":{name:"Pidilite Industries",     sector:"Consumer",      base:2876.0, mktCap:"₹1.5L Cr",  pe:74.8, eps:38.4,  roe:26.4, debtEquity:0.0,  divYield:0.6, revenueGrowth:8.4,  w52h:3334, w52l:2364, volatility:20, rating:"Hold"},
+  "HAVELLS.NS"  :{name:"Havells India",            sector:"Consumer",      base:1628.0, mktCap:"₹1.0L Cr",  pe:58.4, eps:27.9,  roe:18.8, debtEquity:0.0,  divYield:0.6, revenueGrowth:14.2, w52h:2040, w52l:1322, volatility:22, rating:"Hold"},
+  "^NSEI"       :{name:"NIFTY 50 Index",           sector:"Index",         base:22847.0,mktCap:"—",         pe:22.4, eps:0, roe:0, debtEquity:0, divYield:0, revenueGrowth:0, w52h:26277, w52l:18837, volatility:15, rating:"—"},
 };
+
+// ── Technical & Fundamental Signal Engine ────────────────────────────────────
+// Generates price history, computes SMA, RSI, volatility alerts, buy signals
+function genPriceHistory(sym, days=90) {
+  const s = STOCKS[sym]; if(!s) return [];
+  const seed = sym.split('').reduce((a,c)=>a+c.charCodeAt(0),0);
+  let price = s.base * (0.92 + (seed%17)/100);
+  const hist = [];
+  for(let i=days;i>=0;i--){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const vol = s.volatility/100/Math.sqrt(252);
+    price = price * (1 + (Math.random()-0.497)*vol*2.2);
+    price = Math.max(price, s.base*0.5);
+    hist.push({ date:d.toISOString().split('T')[0], close:+price.toFixed(2),
+      volume: Math.floor(1e6*(0.5+Math.random())) });
+  }
+  return hist;
+}
+function calcSMA(prices, period) {
+  return prices.map((_,i)=>
+    i<period-1?null: +(prices.slice(i-period+1,i+1).reduce((a,b)=>a+b,0)/period).toFixed(2)
+  );
+}
+function calcRSI(prices, period=14) {
+  const rsi=[]; let gains=0,losses=0;
+  for(let i=1;i<prices.length;i++){
+    const d=prices[i]-prices[i-1];
+    if(i<=period){gains+=d>0?d:0;losses+=d<0?-d:0;}
+    if(i===period){rsi.push(null);continue;}
+    if(i>period){
+      const ag=gains/period, al=losses/period;
+      rsi.push(al===0?100:+(100-100/(1+ag/al)).toFixed(1));
+      gains=d>0?d:0;losses=d<0?-d:0;
+    } else rsi.push(null);
+  }
+  return [null,...rsi];
+}
+function getSignal(sym) {
+  const s = STOCKS[sym]; if(!s||sym==="^NSEI") return null;
+  const hist = genPriceHistory(sym, 60);
+  const closes = hist.map(h=>h.close);
+  const sma20 = calcSMA(closes,20); const sma50 = calcSMA(closes,50);
+  const rsi = calcRSI(closes);
+  const cur = closes[closes.length-1];
+  const last20 = sma20[sma20.length-1]; const last50 = sma50[sma50.length-1];
+  const lastRsi = rsi[rsi.length-1]||50;
+  const fromW52L = ((cur-s.w52l)/s.w52l)*100;
+  const fromW52H = ((s.w52h-cur)/s.w52h)*100;
+  const alerts = [];
+  if(s.volatility>=40) alerts.push({type:"danger",msg:`⚠ Very High Volatility (${s.volatility}% ann.) — High Risk`});
+  else if(s.volatility>=28) alerts.push({type:"warn",msg:`⚡ Elevated Volatility (${s.volatility}% ann.) — Moderate Risk`});
+  if(lastRsi>70) alerts.push({type:"warn",msg:`RSI ${lastRsi} — Overbought, potential pullback`});
+  if(lastRsi<30) alerts.push({type:"info",msg:`RSI ${lastRsi} — Oversold, potential bounce`});
+  if(last20&&last50&&last20>last50) alerts.push({type:"success",msg:"Golden Cross: SMA20 > SMA50 — Bullish trend"});
+  if(last20&&last50&&last20<last50) alerts.push({type:"warn",msg:"Death Cross: SMA20 < SMA50 — Bearish signal"});
+  if(fromW52L<15) alerts.push({type:"info",msg:`Near 52-week low (${fromW52L.toFixed(1)}% above) — Possible value entry`});
+  if(fromW52H<10) alerts.push({type:"warn",msg:`Near 52-week high (${fromW52H.toFixed(1)}% below) — Resistance ahead`});
+  const fundamentalScore = (
+    (s.roe>20?3:s.roe>15?2:s.roe>10?1:0)+
+    (s.pe<20?3:s.pe<35?2:s.pe<55?1:0)+
+    (s.debtEquity<0.5?3:s.debtEquity<1?2:s.debtEquity<2?1:0)+
+    (s.revenueGrowth>15?3:s.revenueGrowth>8?2:s.revenueGrowth>3?1:0)+
+    (s.divYield>3?2:s.divYield>1?1:0)
+  );
+  let buySignal="Hold";
+  if(fundamentalScore>=11&&lastRsi<65&&last20&&last50&&last20>last50) buySignal="Strong Buy";
+  else if(fundamentalScore>=8&&lastRsi<72) buySignal="Buy";
+  else if(fundamentalScore<=4||lastRsi>75) buySignal="Sell";
+  return {alerts,fundamentalScore,rsi:lastRsi,sma20:last20,sma50:last50,cur,buySignal,hist};
+}
 
 const SECTOR_COLORS = {
   "Energy":"#f59e0b","IT":"#6366f1","Banking":"#3b82f6","FMCG":"#10b981",
   "NBFC":"#8b5cf6","Auto":"#f97316","Infrastructure":"#64748b","Consumer":"#ec4899",
   "Pharma":"#06b6d4","Utilities":"#84cc16","Conglomerate":"#ef4444",
-  "Cement":"#a78bfa","Metals":"#94a3b8","Index":"#475569","Other":"#64748b",
+  "Cement":"#a78bfa","Metals":"#94a3b8","Index":"#475569","Healthcare":"#0ea5e9",
+  "Retail":"#f43f5e","Other":"#64748b",
 };
 
 // Simulated live price (small variance each call)
@@ -429,18 +544,18 @@ function AuthPage({onAuth}){
     if(!usersDB.get(u)){
       usersDB.save(u,{username:u,email:"demo@stockiq.in",passwordHash:hashPwd("demo123"),createdAt:nowS()});
       // Seed demo portfolio
-      const p={"TCS.NS":{qty:10,avgPrice:3820},"HDFCBANK.NS":{qty:20,avgPrice:1610},"SUNPHARMA.NS":{qty:15,avgPrice:1620},"RELIANCE.NS":{qty:8,avgPrice:2780}};
+      const p={"TCS.NS":{qty:10,avgPrice:3820},"HDFCBANK.NS":{qty:20,avgPrice:1610},"SUNPHARMA.NS":{qty:15,avgPrice:1620},"RELIANCE.NS":{qty:8,avgPrice:2780},"ITC.NS":{qty:50,avgPrice:440},"HCLTECH.NS":{qty:12,avgPrice:1580},"COALINDIA.NS":{qty:30,avgPrice:420}};
       portDB.save(u,p);
-      [["TCS.NS",10,3820,"buy"],["HDFCBANK.NS",20,1610,"buy"],["SUNPHARMA.NS",15,1620,"buy"],["RELIANCE.NS",8,2780,"buy"]].forEach(([sym,qty,price,type])=>{
+      [["TCS.NS",10,3820,"buy"],["HDFCBANK.NS",20,1610,"buy"],["SUNPHARMA.NS",15,1620,"buy"],["RELIANCE.NS",8,2780,"buy"],["ITC.NS",50,440,"buy"],["HCLTECH.NS",12,1580,"buy"],["COALINDIA.NS",30,420,"buy"]].forEach(([sym,qty,price,type])=>{
         txnDB.add(u,{symbol:sym,qty,price,type,date:nowS()});
       });
-      // Seed history
+      // Seed history — 120 days
       const base=Object.entries(p).reduce((s,[,h])=>s+h.qty*h.avgPrice,0);
-      for(let i=29;i>=0;i--){
+      for(let i=119;i>=0;i--){
         const d=new Date(); d.setDate(d.getDate()-i);
-        histDB.push(u,{date:d.toISOString().split("T")[0],value:base*(0.94+Math.random()*0.12)});
+        histDB.push(u,{date:d.toISOString().split("T")[0],value:base*(0.88+Math.random()*0.24)});
       }
-      watchDB.add(u,"MARUTI.NS"); watchDB.add(u,"INFY.NS"); watchDB.add(u,"BAJFINANCE.NS");
+      watchDB.add(u,"MARUTI.NS"); watchDB.add(u,"INFY.NS"); watchDB.add(u,"BAJFINANCE.NS"); watchDB.add(u,"DRREDDYS.NS"); watchDB.add(u,"LT.NS");
     }
     onAuth(usersDB.get(u));
   };
@@ -603,6 +718,7 @@ export default function App(){
 
   const NAV=[
     {id:"dashboard",   label:"Dashboard",    icon:"⊞"},
+    {id:"markets",     label:"Markets",      icon:"📊"},
     {id:"portfolio",   label:"Portfolio",    icon:"◎"},
     {id:"trade",       label:"Trade",        icon:"⇄"},
     {id:"risk",        label:"Risk Analysis",icon:"🛡"},
@@ -615,6 +731,7 @@ export default function App(){
 
   const PAGES={
     dashboard:<DashboardPage portfolio={portfolio} prices={prices} risk={risk} totalVal={totalVal} totalPnL={totalPnL} totalPnLPct={totalPnLPct} history={history} user={user}/>,
+    markets:<MarketsPage portfolio={portfolio} prices={prices} watchlist={watchlist} onWatch={toggleWatch} onTrade={(sym)=>{setPage("trade");}}/>,
     portfolio:<PortfolioPage portfolio={portfolio} prices={prices} toast={toast} onWatch={toggleWatch} watchlist={watchlist}/>,
     trade:<TradePage portfolio={portfolio} prices={prices} onBuy={buyStock} onSell={sellStock} watchlist={watchlist} onWatch={toggleWatch}/>,
     risk:<RiskAnalysisPage portfolio={portfolio} prices={prices} risk={risk} user={user} totalVal={totalVal} history={history}/>,
@@ -721,14 +838,404 @@ function GlobalStyles({theme}){
   );
 }
 
+
+/* ════════════════════════════════════════════════════════════════
+   STOCK CHART — Line chart with SMA20, SMA50, RSI, volume bars
+   ════════════════════════════════════════════════════════════════ */
+function StockChart({sym, height}){
+  height = height || 260;
+  const [range,setRange]=useState(60);
+  const s=STOCKS[sym]; if(!s) return null;
+  const hist=useMemo(()=>genPriceHistory(sym,range),[sym,range]);
+  const closes=hist.map(function(h){return h.close;});
+  const volumes=hist.map(function(h){return h.volume;});
+  const sma20=calcSMA(closes,20);
+  const sma50=calcSMA(closes,50);
+  const rsi=calcRSI(closes);
+  if(hist.length<2) return null;
+  const W=700,H=height,VH=50,PAD={t:10,r:10,b:30,l:60};
+  const cW=W-PAD.l-PAD.r,cH=H-PAD.t-PAD.b-VH-10;
+  const minP=Math.min(...closes)*0.995,maxP=Math.max(...closes)*1.005;
+  const px=(i)=>PAD.l+i/(hist.length-1)*cW;
+  const py=(v)=>PAD.t+cH-(v-minP)/(maxP-minP)*cH;
+  const maxVol=Math.max(...volumes);
+  const linePath=closes.map((v,i)=>`${i===0?"M":"L"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(" ");
+  const fillPath=linePath+` L${px(hist.length-1).toFixed(1)},${(PAD.t+cH).toFixed(1)} L${PAD.l},${(PAD.t+cH).toFixed(1)}Z`;
+  const sma20Path=sma20.map((v,i)=>v===null?null:`${i===0||sma20[i-1]===null?"M":"L"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).filter(Boolean).join(" ");
+  const sma50Path=sma50.map((v,i)=>v===null?null:`${i===0||sma50[i-1]===null?"M":"L"}${px(i).toFixed(1)},${py(v).toFixed(1)}`).filter(Boolean).join(" ");
+  const isUp=closes[closes.length-1]>=closes[0];
+  const lineColor=isUp?"#22c55e":"#ef4444";
+  const lastRsi=rsi[rsi.length-1]||50;
+  const rsiColor=lastRsi>70?"#ef4444":lastRsi<30?"#22c55e":"#6366f1";
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{display:"flex",gap:8,fontSize:11}}>
+          {[{c:"#22c55e",l:"SMA20"},{c:"#f59e0b",l:"SMA50"}].map(function(x){return(
+            <span key={x.l} style={{display:"flex",alignItems:"center",gap:4,color:"var(--t2)"}}>
+              <span style={{width:14,height:2,background:x.c,display:"inline-block",borderRadius:1}}/>{x.l}
+            </span>
+          );})}
+          <span style={{fontSize:11,color:"var(--t2)"}}>|</span>
+          <span style={{fontSize:11,fontWeight:600,color:rsiColor}}>RSI: {lastRsi}</span>
+          <span style={{fontSize:11,color:lastRsi>70?"#ef4444":lastRsi<30?"#22c55e":"var(--t3)"}}>
+            {lastRsi>70?"Overbought":lastRsi<30?"Oversold":"Neutral"}
+          </span>
+        </div>
+        <div style={{display:"flex",gap:4}}>
+          {[14,30,60,90].map(function(r){return(
+            <button key={r} onClick={()=>setRange(r)}
+              style={{padding:"3px 9px",borderRadius:6,border:"1px solid var(--brd)",fontSize:11,cursor:"pointer",fontFamily:"inherit",
+                background:range===r?"var(--acc)":"transparent",color:range===r?"#fff":"var(--t2)"}}>
+              {r}D
+            </button>
+          );})}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H+8}`} style={{width:"100%",display:"block"}} preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={`cg_${sym.replace(/[^a-zA-Z0-9]/g,"_")}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={lineColor} stopOpacity="0.18"/>
+            <stop offset="100%" stopColor={lineColor} stopOpacity="0.01"/>
+          </linearGradient>
+        </defs>
+        {[0,1,2,3,4].map(function(i){
+          const v=minP+i*(maxP-minP)/4;
+          const y=py(v);
+          return (<g key={i}>
+            <line x1={PAD.l} y1={y} x2={W-PAD.r} y2={y} stroke="var(--brd)" strokeWidth="0.5"/>
+            <text x={PAD.l-6} y={y+4} textAnchor="end" fontSize="9" fill="var(--t3)">{v>=1000?`${(v/1000).toFixed(1)}k`:v.toFixed(0)}</text>
+          </g>);
+        })}
+        {hist.map(function(h,i){
+          const barW=Math.max(1,cW/hist.length-0.5);
+          const bx=px(i)-barW/2;
+          const by=PAD.t+cH+10+(1-(h.volume/maxVol))*VH;
+          const bh=(h.volume/maxVol)*VH;
+          const isGreen=i>0&&h.close>=hist[i-1].close;
+          return <rect key={i} x={bx} y={by} width={barW} height={bh} fill={isGreen?"#22c55e30":"#ef444430"}/>;
+        })}
+        <path d={fillPath} fill={`url(#cg_${sym.replace(/[^a-zA-Z0-9]/g,"_")})`}/>
+        {sma20Path&&<path d={sma20Path} fill="none" stroke="#22c55e" strokeWidth="1.2" strokeDasharray="4 2"/>}
+        {sma50Path&&<path d={sma50Path} fill="none" stroke="#f59e0b" strokeWidth="1.2" strokeDasharray="4 2"/>}
+        <path d={linePath} fill="none" stroke={lineColor} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx={px(hist.length-1)} cy={py(closes[closes.length-1])} r="3.5" fill={lineColor}/>
+        {[0,Math.floor(hist.length/3),Math.floor(hist.length*2/3),hist.length-1].map(function(i){return(
+          <text key={i} x={px(i)} y={H-PAD.b+14} textAnchor="middle" fontSize="9" fill="var(--t3)">{hist[i]&&hist[i].date?hist[i].date.slice(5):""}</text>
+        );})}
+        <text x={PAD.l} y={PAD.t+cH+8} fontSize="8" fill="var(--t3)">VOL</text>
+      </svg>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   STOCK DETAIL MODAL
+   ════════════════════════════════════════════════════════════════ */
+function StockDetailModal({sym,onClose,onBuyNav,onWatch,isWatched}){
+  const s=STOCKS[sym]; if(!s) return null;
+  const sig=useMemo(()=>getSignal(sym),[sym]);
+  const price=livePrice(sym)||s.base;
+  const change=liveChange(sym);
+  const fromW52L=((price-s.w52l)/s.w52l*100).toFixed(1);
+  const ratingColor={"Strong Buy":"#22c55e","Buy":"#6366f1","Hold":"#f59e0b","Sell":"#ef4444"}[sig&&sig.buySignal]||"#6366f1";
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}
+      onClick={function(e){if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:"var(--card)",borderRadius:18,padding:24,width:"100%",maxWidth:760,maxHeight:"90vh",overflowY:"auto",border:"1px solid var(--brd)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <span style={{fontWeight:800,fontSize:20}}>{sym}</span>
+              <Badge color={SECTOR_COLORS[s.sector]||"#6366f1"}>{s.sector}</Badge>
+              <span style={{padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700,background:`${ratingColor}20`,color:ratingColor}}>
+                {sig&&sig.buySignal||"—"}
+              </span>
+            </div>
+            <div style={{fontSize:13,color:"var(--t2)"}}>{s.name}</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontSize:24,fontWeight:800}}>{fmtC(price)}</div>
+              <div style={{fontSize:13,color:change>=0?"#22c55e":"#ef4444",fontWeight:600}}>{fmtP(change)}</div>
+            </div>
+            <button onClick={onClose} style={{background:"var(--card2)",border:"1px solid var(--brd)",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:16,color:"var(--t2)"}}>✕</button>
+          </div>
+        </div>
+        {sig&&sig.alerts&&sig.alerts.length>0&&(
+          <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:5}}>
+            {sig.alerts.map(function(a,i){
+              const c={danger:"#ef4444",warn:"#f59e0b",info:"#6366f1",success:"#22c55e"}[a.type]||"#6366f1";
+              return <div key={i} style={{padding:"8px 12px",borderRadius:8,background:`${c}12`,border:`1px solid ${c}28`,fontSize:12,color:c,fontWeight:500}}>{a.msg}</div>;
+            })}
+          </div>
+        )}
+        <Card style={{marginBottom:14}}><StockChart sym={sym}/></Card>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14}}>
+          {[
+            {l:"P/E Ratio",v:s.pe,good:s.pe<25,bad:s.pe>60},
+            {l:"ROE",v:`${s.roe}%`,good:s.roe>18,bad:s.roe<10},
+            {l:"EPS",v:fmtC(s.eps)},
+            {l:"Debt/Equity",v:s.debtEquity,good:s.debtEquity<0.5,bad:s.debtEquity>2},
+            {l:"Div Yield",v:`${s.divYield}%`,good:s.divYield>2},
+            {l:"Rev Growth",v:`${s.revenueGrowth}%`,good:s.revenueGrowth>12,bad:s.revenueGrowth<3},
+            {l:"52W High",v:fmtC(s.w52h)},
+            {l:"Volatility",v:`${s.volatility}%`,good:s.volatility<18,bad:s.volatility>=35},
+          ].map(function(x){return(
+            <div key={x.l} style={{background:"var(--card2)",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:"var(--t3)",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.04em"}}>{x.l}</div>
+              <div style={{fontWeight:700,fontSize:15,color:x.good?"#22c55e":x.bad?"#ef4444":"var(--t1)"}}>{x.v}</div>
+            </div>
+          );})}
+        </div>
+        <div style={{marginBottom:14,padding:"12px 14px",background:"var(--card2)",borderRadius:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--t3)",marginBottom:5}}>
+            <span>52W Low: {fmtC(s.w52l)}</span>
+            <span style={{fontWeight:600,color:"var(--t1)"}}>{fmtC(price)} ({fromW52L}% above low)</span>
+            <span>52W High: {fmtC(s.w52h)}</span>
+          </div>
+          <div style={{height:6,background:"var(--brd)",borderRadius:3,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${Math.min(100,((price-s.w52l)/(s.w52h-s.w52l))*100)}%`,background:"var(--acc)",borderRadius:3}}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button className="btn-p" style={{flex:1,padding:12}} onClick={function(){onBuyNav(sym);onClose();}}>▲ Trade {sym.replace(".NS","")}</button>
+          <button onClick={function(){onWatch(sym);}} style={{padding:"12px 20px",borderRadius:10,border:"1px solid var(--brd)",background:isWatched?"#6366f120":"transparent",color:isWatched?"#6366f1":"var(--t2)",fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+            {isWatched?"⭐ Watching":"☆ Watch"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MARKETS PAGE
+   ════════════════════════════════════════════════════════════════ */
+function MarketsPage({portfolio,prices,watchlist,onWatch,onTrade}){
+  const [filter,setFilter]=useState("All");
+  const [signalFilter,setSignalFilter]=useState("All");
+  const [search,setSearch]=useState("");
+  const [sortK,setSortK]=useState("mktCap");
+  const [selectedSym,setSelectedSym]=useState(null);
+  const sectors=useMemo(()=>["All",...Array.from(new Set(Object.values(STOCKS).filter(function(s){return s.sector!=="Index";}).map(function(s){return s.sector;}))).sort()],[]);
+  const allStocks=useMemo(()=>
+    Object.entries(STOCKS)
+      .filter(function(e){return e[0]!=="^NSEI";})
+      .map(function(e){
+        const sym=e[0],s=e[1];
+        const sig=getSignal(sym);
+        const price=prices[sym]||livePrice(sym)||s.base;
+        const change=liveChange(sym);
+        return Object.assign({sym,price,change,signal:sig?sig.buySignal:"Hold",rsi:sig?sig.rsi:50,alerts:sig?sig.alerts:[]},s);
+      })
+      .filter(function(s){return filter==="All"||s.sector===filter;})
+      .filter(function(s){return signalFilter==="All"||s.signal===signalFilter;})
+      .filter(function(s){return !search||s.sym.toUpperCase().includes(search.toUpperCase())||s.name.toUpperCase().includes(search.toUpperCase());})
+      .sort(function(a,b){
+        if(sortK==="change") return b.change-a.change;
+        if(sortK==="rsi") return b.rsi-a.rsi;
+        if(sortK==="pe") return a.pe-b.pe;
+        if(sortK==="roe") return b.roe-a.roe;
+        return 0;
+      })
+  ,[filter,signalFilter,search,sortK,prices]);
+
+  const SC={"Strong Buy":"#22c55e","Buy":"#6366f1","Hold":"#f59e0b","Sell":"#ef4444"};
+  return (
+    <div className="ani">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+        <div>
+          <h1 style={{fontSize:24,fontWeight:800,letterSpacing:"-0.5px"}}>📊 Markets</h1>
+          <p style={{color:"var(--t2)",fontSize:14,marginTop:4}}>{allStocks.length} of 60 stocks · signals · fundamentals · charts</p>
+        </div>
+        <input value={search} onChange={function(e){setSearch(e.target.value);}} placeholder="Search..." style={{padding:"8px 14px",borderRadius:10,width:180,fontSize:13}}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        {["Strong Buy","Buy","Hold","Sell"].map(function(sig){
+          const cnt=Object.keys(STOCKS).filter(function(k){return k!=="^NSEI";}).filter(function(k){return getSignal(k)&&getSignal(k).buySignal===sig;}).length;
+          return <div key={sig} style={{background:"var(--card2)",border:"1px solid var(--brd)",borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:11,color:"var(--t3)",marginBottom:4}}>{sig}</div>
+            <div style={{fontWeight:800,fontSize:22,color:SC[sig]}}>{cnt}<span style={{fontSize:12,fontWeight:400,color:"var(--t3)"}}> stocks</span></div>
+          </div>;
+        })}
+      </div>
+      <div style={{marginBottom:14,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {sectors.map(function(s){return(
+            <button key={s} onClick={function(){setFilter(s);}}
+              style={{padding:"5px 11px",borderRadius:20,border:"1px solid var(--brd)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                background:filter===s?"var(--acc)":"transparent",color:filter===s?"#fff":"var(--t2)"}}>
+              {s}
+            </button>
+          );})}
+        </div>
+        <span style={{color:"var(--brd)"}}>|</span>
+        {["All","Strong Buy","Buy","Hold","Sell"].map(function(s){
+          const col=SC[s];
+          return <button key={s} onClick={function(){setSignalFilter(s);}}
+            style={{padding:"5px 11px",borderRadius:20,border:`1px solid ${s!=="All"&&col?col+"60":"var(--brd)"}`,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+              background:signalFilter===s?(s!=="All"&&col?col+"20":"var(--acc)"):"transparent",
+              color:signalFilter===s?(s!=="All"&&col?col:"#fff"):"var(--t2)"}}>
+            {s}
+          </button>;
+        })}
+        <div style={{marginLeft:"auto",display:"flex",gap:5,alignItems:"center",fontSize:11,color:"var(--t3)"}}>
+          Sort:
+          {[{k:"change",l:"Change"},{k:"roe",l:"ROE"},{k:"pe",l:"P/E"},{k:"rsi",l:"RSI"}].map(function(x){return(
+            <button key={x.k} onClick={function(){setSortK(x.k);}}
+              style={{padding:"4px 9px",borderRadius:6,border:"1px solid var(--brd)",fontSize:11,cursor:"pointer",fontFamily:"inherit",
+                background:sortK===x.k?"var(--acc)":"transparent",color:sortK===x.k?"#fff":"var(--t2)"}}>
+              {x.l}
+            </button>
+          );})}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(268px,1fr))",gap:10}}>
+        {allStocks.map(function(stock){
+          const sym=stock.sym,price=stock.price,change=stock.change,signal=stock.signal,rsi=stock.rsi,alerts=stock.alerts;
+          const s=STOCKS[sym];
+          const sc=SC[signal]||"#6366f1";
+          const inPort=!!portfolio[sym];
+          const pos52=s&&s.w52h&&s.w52l?Math.min(100,((price-s.w52l)/(s.w52h-s.w52l))*100):50;
+          const hasVolWarn=alerts&&alerts.some(function(a){return a.type==="danger";});
+          return (
+            <div key={sym} onClick={function(){setSelectedSym(sym);}}
+              style={{background:"var(--card)",border:`1px solid ${inPort?"rgba(99,102,241,0.4)":"var(--brd)"}`,borderRadius:14,padding:14,cursor:"pointer",transition:"all 0.15s",position:"relative"}}
+              onMouseEnter={function(e){e.currentTarget.style.borderColor="var(--acc)";e.currentTarget.style.transform="translateY(-2px)";}}
+              onMouseLeave={function(e){e.currentTarget.style.borderColor=inPort?"rgba(99,102,241,0.4)":"var(--brd)";e.currentTarget.style.transform="none";}}>
+              {hasVolWarn&&<div style={{position:"absolute",top:10,right:10,fontSize:12,color:"#f59e0b"}} title="High Volatility Warning">⚠</div>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{fontWeight:800,fontSize:14}}>{sym.replace(".NS","")}</span>
+                    {inPort&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:4,background:"rgba(99,102,241,0.15)",color:"var(--acc)",fontWeight:700}}>HELD</span>}
+                  </div>
+                  <div style={{fontSize:10,color:"var(--t3)",marginTop:1}}>{s&&s.name?s.name.slice(0,22):sym}</div>
+                </div>
+                <span style={{fontSize:10,padding:"2px 7px",borderRadius:10,background:`${sc}18`,color:sc,fontWeight:700,whiteSpace:"nowrap"}}>{signal}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+                <span style={{fontSize:18,fontWeight:800}}>{fmtC(price)}</span>
+                <span style={{fontSize:12,color:change>=0?"#22c55e":"#ef4444",fontWeight:600}}>{fmtP(change)}</span>
+              </div>
+              {s&&s.w52h&&s.w52l&&<div style={{marginBottom:8}}>
+                <div style={{height:4,background:"var(--brd)",borderRadius:2,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${pos52}%`,background:"var(--acc)",borderRadius:2}}/>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"var(--t3)",marginTop:2}}>
+                  <span>{fmtC(s.w52l)}</span><span>{fmtC(s.w52h)}</span>
+                </div>
+              </div>}
+              {s&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,marginBottom:6}}>
+                {[
+                  {l:"P/E",v:s.pe,good:s.pe<25,bad:s.pe>60},
+                  {l:"ROE",v:`${s.roe}%`,good:s.roe>18,bad:s.roe<10},
+                  {l:"Vol%",v:`${s.volatility}%`,good:s.volatility<20,bad:s.volatility>=35},
+                ].map(function(x){return(
+                  <div key={x.l} style={{textAlign:"center",background:"var(--card2)",borderRadius:6,padding:"3px 0"}}>
+                    <div style={{fontSize:9,color:"var(--t3)"}}>{x.l}</div>
+                    <div style={{fontSize:11,fontWeight:700,color:x.good?"#22c55e":x.bad?"#ef4444":"var(--t1)"}}>{x.v}</div>
+                  </div>
+                );})}
+              </div>}
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:"var(--t3)"}}>RSI {rsi}</span>
+                <div style={{flex:1,height:3,background:"var(--brd)",borderRadius:2}}>
+                  <div style={{height:"100%",width:`${rsi}%`,background:rsi>70?"#ef4444":rsi<30?"#22c55e":"#6366f1",borderRadius:2}}/>
+                </div>
+                <span style={{fontSize:10,color:rsi>70?"#ef4444":rsi<30?"#22c55e":"var(--t3)"}}>
+                  {rsi>70?"OB":rsi<30?"OS":""}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {selectedSym&&(
+        <StockDetailModal sym={selectedSym} onClose={function(){setSelectedSym(null);}}
+          onBuyNav={function(sym){setSelectedSym(null);onTrade(sym);}}
+          onWatch={onWatch} isWatched={watchlist.includes(selectedSym)}/>
+      )}
+    </div>
+  );
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   SECTOR P&L BAR CHART — Visualisation 3 on Dashboard
+   ════════════════════════════════════════════════════════════════ */
+function SectorPnLChart({portfolio,prices}){
+  const sectorData={};
+  Object.entries(portfolio).forEach(([sym,h])=>{
+    const sec=STOCKS[sym]?.sector||"Other";
+    const cur=prices[sym]||h.avgPrice;
+    if(!sectorData[sec]) sectorData[sec]={pnl:0,val:0};
+    sectorData[sec].pnl+=(cur-h.avgPrice)*h.qty;
+    sectorData[sec].val+=cur*h.qty;
+  });
+  const entries=Object.entries(sectorData).sort((a,b)=>b[1].pnl-a[1].pnl);
+  if(!entries.length) return <div style={{color:"var(--t3)",fontSize:13,padding:"20px 0",textAlign:"center"}}>No holdings to display</div>;
+  const maxAbs=Math.max(...entries.map(([,v])=>Math.abs(v.pnl)))||1;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {entries.map(([sec,{pnl,val}])=>{
+        const pct=(pnl/val)*100;
+        const isPos=pnl>=0;
+        const barW=(Math.abs(pnl)/maxAbs)*100;
+        return (
+          <div key={sec} style={{display:"grid",gridTemplateColumns:"110px 1fr 90px 70px",alignItems:"center",gap:10}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{width:8,height:8,borderRadius:2,background:SECTOR_COLORS[sec]||"#6366f1",flexShrink:0}}/>
+              <span style={{fontSize:12,fontWeight:600,color:"var(--t1)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec}</span>
+            </div>
+            <div style={{height:20,background:"var(--card2)",borderRadius:4,overflow:"hidden",position:"relative"}}>
+              <div style={{position:"absolute",top:0,bottom:0,left:0,width:`${barW}%`,background:isPos?"#22c55e":"#ef4444",borderRadius:4,opacity:0.8}}/>
+            </div>
+            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:isPos?"#22c55e":"#ef4444"}}>{isPos?"+":""}{fmtC(pnl)}</div>
+            <div style={{textAlign:"right",fontSize:11,color:isPos?"#22c55e":"#ef4444",fontWeight:600}}>{isPos?"+":""}{fmt(pct,2)}%</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════════════════
    DASHBOARD PAGE
+
+   AUTO-REFRESH STRATEGY & JUSTIFICATION:
+   ─────────────────────────────────────────
+   • Live stock prices   → refresh every 7 seconds via setInterval in App shell.
+     Reason: NSE intraday prices change frequently during market hours; 7 s
+     balances data freshness with CPU / battery cost on the client device.
+
+   • Portfolio history snapshot → written once per day (deduped by date key).
+     Reason: Portfolio NAV is a daily metric — over-sampling wastes localStorage
+     storage without adding analytical value to the time-series chart.
+
+   • Database Manager view → refresh every 5 seconds (setInterval in DatabasePage).
+     Reason: Allows multiple browser tabs / sessions to observe data changes
+     without a manual page reload.
+
+   • Risk score → recomputed reactively on every price tick (derived from
+     portfolio + prices React state, no extra interval needed).
+     Reason: Ensures the displayed risk score is always consistent with the
+     latest live valuations.
    ════════════════════════════════════════════════════════════════ */
 function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,history,user}){
   const n=Object.keys(portfolio).length;
   const niftyPrice=prices["^NSEI"]||livePrice("^NSEI")||22847;
   const niftyRet=((niftyPrice-22800)/22800)*100;
   const outperf=totalPnLPct-niftyRet;
+
+  // ── Interactive date range filter (Visualisation 1 control) ──────────────
+  const [dateRange,setDateRange]=useState("30");
+  const filteredHistory=history.filter((_,i,arr)=>{
+    if(dateRange==="all") return true;
+    const days=parseInt(dateRange);
+    return i>=arr.length-days;
+  });
 
   const topHoldings=Object.entries(portfolio)
     .map(([sym,h])=>({sym,...h,cur:prices[sym]||h.avgPrice,val:(prices[sym]||h.avgPrice)*h.qty}))
@@ -764,20 +1271,29 @@ function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,hist
       {/* Charts row */}
       <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:18,marginBottom:18}}>
         <Card>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
             <div>
               <div style={{fontWeight:700,fontSize:15}}>Portfolio Value History</div>
-              <div style={{fontSize:12,color:"var(--t3)"}}>Last {history.length} days</div>
+              <div style={{fontSize:12,color:"var(--t3)"}}>Last {filteredHistory.length} days shown</div>
             </div>
-            {history.length>=2&&(
-              <div style={{textAlign:"right"}}>
-                <div style={{fontWeight:700,fontSize:15,color:totalPnL>=0?"#22c55e":"#ef4444"}}>{fmtC(totalVal)}</div>
-                <div style={{fontSize:11,color:"var(--t3)"}}>Current value</div>
-              </div>
-            )}
+            <div style={{display:"flex",gap:5}}>
+              {["7","14","30","60","all"].map(d=>(
+                <button key={d} onClick={()=>setDateRange(d)}
+                  style={{padding:"4px 10px",borderRadius:16,border:"1px solid var(--brd)",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                    background:dateRange===d?"var(--acc)":"transparent",color:dateRange===d?"#fff":"var(--t2)",transition:"all 0.15s"}}>
+                  {d==="all"?"All":`${d}D`}
+                </button>
+              ))}
+            </div>
           </div>
-          <MiniLineChart data={history} height={150} showDots/>
-          {history.length>=2&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--t3)",marginTop:6}}><span>{history[0]?.date}</span><span>{history[history.length-1]?.date}</span></div>}
+          {filteredHistory.length>=2&&(
+            <div style={{textAlign:"right",marginBottom:6}}>
+              <span style={{fontWeight:700,fontSize:14,color:totalPnL>=0?"#22c55e":"#ef4444"}}>{fmtC(totalVal)}</span>
+              <span style={{fontSize:11,color:"var(--t3)",marginLeft:6}}>Current value</span>
+            </div>
+          )}
+          <MiniLineChart data={filteredHistory} height={150} showDots/>
+          {filteredHistory.length>=2&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--t3)",marginTop:6}}><span>{filteredHistory[0]?.date}</span><span>{filteredHistory[filteredHistory.length-1]?.date}</span></div>}
         </Card>
 
         <Card>
@@ -843,6 +1359,15 @@ function DashboardPage({portfolio,prices,risk,totalVal,totalPnL,totalPnLPct,hist
           )}
         </Card>
       </div>
+
+      {/* Visualisation 3: Sector P&L Bar Chart */}
+      {n>0&&(
+        <Card style={{marginBottom:18}}>
+          <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>Sector Performance (P&L)</div>
+          <div style={{fontSize:12,color:"var(--t3)",marginBottom:14}}>Unrealised gain / loss by sector</div>
+          <SectorPnLChart portfolio={portfolio} prices={prices}/>
+        </Card>
+      )}
 
       {/* Top holdings table */}
       <Card pad={0} style={{overflow:"hidden"}}>
@@ -1166,10 +1691,20 @@ After: ${Object.keys(simP).length} stocks, risk ${afterRisk.score}/100 (${afterR
 Sectors before: ${JSON.stringify(beforeRisk.sectors)}.
 Sectors after: ${JSON.stringify(afterRisk.sectors)}.
 Give 2-3 sharp, specific insights about this decision. Focus on diversification impact, sector exposure change, and risk. Use Indian market context. Be direct, max 3 sentences.`;
-      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:250,messages:[{role:"user",content:prompt}]})});
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":"PLACEHOLDER",
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:250,messages:[{role:"user",content:prompt}]})
+      });
       const data=await resp.json();
-      setAiInsight(data.content?.[0]?.text||"");
-    }catch{setAiInsight("AI advisor temporarily unavailable.");}
+      if(data.error) throw new Error(data.error.message||"API error");
+      setAiInsight(data.content?.[0]?.text||"No insight returned.");
+    }catch(e){setAiInsight(`AI advisor temporarily unavailable: ${e.message||"Unknown error"}`);}
     setAiLoading(false);
   };
 
@@ -1551,12 +2086,19 @@ Provide a detailed analysis covering:
 Keep it professional, specific to Indian markets, and actionable. Use ₹ symbols. Format with clear sections.`;
 
       const resp=await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",headers:{"Content-Type":"application/json"},
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":"PLACEHOLDER",
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
         body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:prompt}]})
       });
       const data=await resp.json();
+      if(data.error) throw new Error(data.error.message||"API error");
       setAiReport(data.content?.[0]?.text||"Unable to generate report.");
-    }catch{setAiReport("AI report generation failed. Please try again.");}
+    }catch(e){setAiReport(`AI report generation failed: ${e.message||"Please try again."}`);}
     setAiLoading(false);
     saveSnapshot();
   };
