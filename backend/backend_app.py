@@ -311,18 +311,21 @@ class LeaderboardEntry(BaseModel):
 
 @app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
 def register(body: RegisterRequest):
+    password = body.password[:72]  # 🔥 FIX (bcrypt limit)
+
     with get_db() as conn:
         if conn.execute("SELECT 1 FROM users WHERE username=?", (body.username,)).fetchone():
             raise HTTPException(status_code=409, detail="Username already taken")
+
         conn.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
-            (body.username, body.email, pwd_ctx.hash(body.password)),
+            (body.username, body.email, pwd_ctx.hash(password)),
         )
+
     return TokenResponse(
         access_token=create_access_token({"sub": body.username}),
         username=body.username,
     )
-
 
 @app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
 def login(form: OAuth2PasswordRequestForm = Depends()):
