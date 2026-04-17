@@ -7,8 +7,19 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+# ── bcrypt / passlib compatibility shim ───────────────────────────────────────
+# passlib 1.7.x tries to read bcrypt.__about__.__version__ which no longer
+# exists in bcrypt ≥ 4.x, causing an AttributeError that crashes every
+# endpoint that hashes a password.  Patch it before importing CryptContext.
+import bcrypt as _bcrypt
+if not hasattr(_bcrypt, "__about__"):
+    class _About:
+        __version__ = getattr(_bcrypt, "__version__", "4.0.0")
+    _bcrypt.__about__ = _About()
+
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -38,6 +49,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# ── CORS — must be added BEFORE any other middleware or routes ─────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
@@ -45,6 +57,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Global exception handler so CORS headers are present even on 500s ─────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in FRONTEND_ORIGINS:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Methods"] = "*"
+        headers["Access-Control-Allow-Headers"] = "*"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {type(exc).__name__}: {exc}"},
+        headers=headers,
+    )
+
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2 = OAuth2PasswordBearer(tokenUrl="/auth/login")
