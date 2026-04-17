@@ -58,6 +58,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def root():
+    return {"message": "StockIQ API running"}
+
 # ── Global exception handler so CORS headers are present even on 500s ─────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
