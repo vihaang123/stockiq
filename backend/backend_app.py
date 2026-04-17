@@ -311,24 +311,27 @@ class LeaderboardEntry(BaseModel):
 
 @app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
 def register(body: RegisterRequest):
-    password = body.password[:72]
+    try:
+        password = body.password[:72]
 
-    email = body.email if body.email else None  # 🔥 FIX
+        email = body.email if body.email else None
 
-    with get_db() as conn:
-        if conn.execute("SELECT 1 FROM users WHERE username=?", (body.username,)).fetchone():
-            raise HTTPException(status_code=409, detail="Username already taken")
+        with get_db() as conn:
+            if conn.execute("SELECT 1 FROM users WHERE username=?", (body.username,)).fetchone():
+                raise HTTPException(status_code=409, detail="Username already taken")
 
-        conn.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
-            (body.username, email, pwd_ctx.hash(password)),
+            conn.execute(
+                "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
+                (body.username, email, pwd_ctx.hash(password)),
+            )
+
+        return TokenResponse(
+            access_token=create_access_token({"sub": body.username}),
+            username=body.username,
         )
 
-    return TokenResponse(
-        access_token=create_access_token({"sub": body.username}),
-        username=body.username,
-    )
-
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/auth/login", response_model=TokenResponse, tags=["Auth"])
 def login(form: OAuth2PasswordRequestForm = Depends()):
     with get_db() as conn:
