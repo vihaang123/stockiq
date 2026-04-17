@@ -313,7 +313,7 @@ function calcRisk(portfolio, priceMap){
 function useToast(){
   const [toasts,set]=useState([]);
   const add=(msg,type="success")=>{
-    const id=uid_gen(); set(t=>[...t,{id,msg,type}]);
+    const id=crypto.randomUUID(); set(t=>[...t,{id,msg,type}]);
     setTimeout(()=>set(t=>t.filter(x=>x.id!==id)),3800);
   };
   return {toasts,add,remove:(id)=>set(t=>t.filter(x=>x.id!==id))};
