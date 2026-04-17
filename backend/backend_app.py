@@ -48,23 +48,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://stockiq-4yhomrnsf-vihaang123s-projects.vercel.app",
-        "http://localhost:5173",
-        "http://localhost:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # CORS — allow Vercel frontend and everything else
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"],   # allow all (fixes your issue immediately)
+    allow_credentials=False,  # IMPORTANT with "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )
