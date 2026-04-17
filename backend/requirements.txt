@@ -2,8 +2,11 @@ fastapi==0.129.0
 uvicorn==0.40.0
 pandas
 numpy
-passlib[bcrypt]
-python-jose
+
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+
+python-jose[cryptography]
 python-multipart
 peewee
 psycopg2-binary
