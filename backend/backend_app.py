@@ -374,15 +374,19 @@ def register(body: RegisterRequest):
     summary="Login and receive JWT access token",
 )
 def login(form: OAuth2PasswordRequestForm = Depends()):
+    password = form.password[:72]  # ✅ FIX HERE
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM users WHERE username=?", (form.username,)
         ).fetchone()
-    if not row or not pwd_ctx.verify(form.password, row["password_hash"]):
+
+    if not row or not pwd_ctx.verify(password, row["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
+
     token = create_access_token({"sub": row["username"]})
     return TokenResponse(access_token=token, username=row["username"])
 
