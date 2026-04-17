@@ -52,9 +52,9 @@ app = FastAPI(
 # ── CORS — must be added BEFORE any other middleware or routes ─────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # 🔥 KEY FIX
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # 🔥 IMPORTANT
     allow_headers=["*"],
 )
 
