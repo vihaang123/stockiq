@@ -311,7 +311,9 @@ class LeaderboardEntry(BaseModel):
 
 @app.post("/auth/register", response_model=TokenResponse, tags=["Auth"])
 def register(body: RegisterRequest):
-    password = body.password[:72]  # 🔥 FIX (bcrypt limit)
+    password = body.password[:72]
+
+    email = body.email if body.email else None  # 🔥 FIX
 
     with get_db() as conn:
         if conn.execute("SELECT 1 FROM users WHERE username=?", (body.username,)).fetchone():
@@ -319,7 +321,7 @@ def register(body: RegisterRequest):
 
         conn.execute(
             "INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
-            (body.username, body.email, pwd_ctx.hash(password)),
+            (body.username, email, pwd_ctx.hash(password)),
         )
 
     return TokenResponse(
